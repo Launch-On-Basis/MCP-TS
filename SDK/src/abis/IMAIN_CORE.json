@@ -1,0 +1,65 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "IMAIN_CORE",
+  "sourceName": "contracts/STAKING.sol",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "user",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "loanId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "numberOfDays",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bool",
+          "name": "isLeverage",
+          "type": "bool"
+        },
+        {
+          "internalType": "bool",
+          "name": "payInUSDC",
+          "type": "bool"
+        },
+        {
+          "internalType": "bool",
+          "name": "refinance",
+          "type": "bool"
+        }
+      ],
+      "name": "ExtensionEligibility",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "possible",
+          "type": "bool"
+        },
+        {
+          "internalType": "uint256",
+          "name": "fee",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "extraOut",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x",
+  "deployedBytecode": "0x",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

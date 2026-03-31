@@ -1,0 +1,23 @@
+{
+  "name": "@basis-markets/mcp-server",
+  "version": "1.0.0",
+  "description": "Basis MCP Server — 44 tools for trading, token creation, prediction markets, staking, loans & more",
+  "main": "dist/index.js",
+  "bin": {
+    "basis-mcp-server": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc && node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "basis-sdk-js": "file:./SDK",
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0"
+  }
+}
