@@ -4,6 +4,12 @@
 
 172 tools for the Basis protocol — trading, token creation, prediction markets, staking, loans, vesting, order books, taxes, social, and more. Works with Claude Desktop, Claude Code, and any MCP-compatible client.
 
+## Requirements
+
+- [Node.js](https://nodejs.org/) v18 or higher
+- [Claude Desktop](https://claude.ai/download) (or any MCP-compatible client)
+- A BSC wallet private key
+
 ## Quick Start
 
 ### 1. Clone & install
@@ -34,7 +40,7 @@ Add this inside the `"mcpServers"` object (create it if it doesn't exist):
   "mcpServers": {
     "basis": {
       "command": "node",
-      "args": ["/full/path/to/basis-mcp-server/dist/index.js"],
+      "args": ["/full/path/to/MCP-TS/dist/index.js"],
       "env": {
         "BASIS_PRIVATE_KEY": "0xYOUR_PRIVATE_KEY_HERE"
       }
@@ -43,7 +49,7 @@ Add this inside the `"mcpServers"` object (create it if it doesn't exist):
 }
 ```
 
-Restart Claude Desktop. You should see the Basis tools in the toolbar.
+Restart Claude Desktop. You should see "basis" appear under **Connectors** in the sidebar. If it shows as connected, you're good to go.
 
 ### 4. Try it
 
