@@ -1,3 +1,5 @@
+[![License: Elastic-2.0](https://img.shields.io/badge/License-ELv2-blue.svg)](https://www.elastic.co/licensing/elastic-license)
+
 # Basis MCP Server
 
 172 tools for the Basis protocol — trading, token creation, prediction markets, staking, loans, vesting, order books, taxes, social, and more. Works with Claude Desktop, Claude Code, and any MCP-compatible client.
@@ -342,4 +344,4 @@ Then anyone can use it with:
 
 ## License
 
-Non-Commercial — free to use, modify, and distribute. No selling without written permission. See [LICENSE](LICENSE) for details.
+[Elastic License 2.0](https://www.elastic.co/licensing/elastic-license) — free to use, modify, and share. Cannot be offered as a hosted/managed service.
