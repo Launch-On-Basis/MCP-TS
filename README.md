@@ -9,8 +9,8 @@
 ### 1. Clone & install
 
 ```bash
-git clone https://github.com/basis-markets/basis-mcp-server.git
-cd basis-mcp-server
+git clone https://github.com/Launch-On-Basis/MCP-TS.git
+cd MCP-TS
 npm install
 npm run build
 ```
