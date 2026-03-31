@@ -139,6 +139,7 @@ const TOOLS = [
   { name: "get_my_tokens", description: "List all tokens you created with prices and state.", inputSchema: { type: "object" as const, properties: {} } },
   { name: "is_ecosystem_token", description: "Check if a token address is a valid Basis ecosystem token.", inputSchema: { type: "object" as const, properties: { token: { type: "string", description: "Token address" } }, required: ["token"] } },
   { name: "get_fee_amount", description: "Get the factory token creation fee.", inputSchema: { type: "object" as const, properties: {} } },
+  { name: "get_floor_price", description: "Get the USDB floor price for a factory token. Does NOT work on STASIS — only factory-created tokens.", inputSchema: { type: "object" as const, properties: { token: { type: "string", description: "Factory token address (not STASIS)" } }, required: ["token"] } },
 
   // ── Module 3: Prediction Markets (12+) ─────────────────
   { name: "create_market", description: "Create prediction market. Earn 20% of net trading fees forever.", inputSchema: { type: "object" as const, properties: { question: { type: "string", description: "Market question" }, symbol: { type: "string", description: "Market token symbol" }, outcomes: { type: "array", items: { type: "string" }, description: "e.g. ['Yes', 'No']" }, end_time: { type: "string", description: "ISO date or unix timestamp" }, seed_usdb: { type: "number", description: "USDB seed (min 50, default: 50)" }, description: { type: "string" }, image_url: { type: "string" } }, required: ["question", "symbol", "outcomes", "end_time"] } },
@@ -506,6 +507,17 @@ async function handleTool(name: string, args: any): Promise<any> {
       case "get_fee_amount": {
         const fee = await client.factory.getFeeAmount();
         return ok({ fee_raw: fee.toString(), fee_formatted: fromRaw(fee) });
+      }
+
+      case "get_floor_price": {
+        const addr = resolveToken(args.token);
+        if (getAddress(addr) === getAddress(client.mainTokenAddress)) {
+          // STASIS floor = spot price (Stable+ token)
+          const price = await client.trading.getUSDPrice(addr);
+          return ok({ token: args.token, floor_price_usdb: fromRaw(price), note: "STASIS is Stable+ — floor equals spot price." });
+        }
+        const floor = await (client.factory as any).getFloorPrice(addr);
+        return ok({ token: args.token, floor_price_usdb: fromRaw(floor) });
       }
 
       // ── Module 3: Prediction Markets ────────────────────

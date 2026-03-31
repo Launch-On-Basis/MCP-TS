@@ -49,7 +49,7 @@ __export(index_exports, {
 module.exports = __toCommonJS(index_exports);
 
 // src/BasisClient.ts
-var import_viem5 = require("viem");
+var import_viem6 = require("viem");
 var import_accounts = require("viem/accounts");
 var import_chains = require("viem/chains");
 var import_siwe = require("siwe");
@@ -420,32 +420,20 @@ var BasisAPI = class {
   /**
    * POST /api/v1/orders/sync — sync an on-chain order event to the database.
    * Call after listOrder, cancelOrder, or buyOrder transactions.
-   * Accepts either session cookie or API key for auth.
+   * No authentication required (public endpoint).
    */
   async syncOrder(txHash, marketType = "public") {
-    const body = JSON.stringify({ txHash, marketType });
-    const headers = { "Content-Type": "application/json" };
-    const apiKey = this.client.apiKey;
-    const cookie = this.client.sessionCookie;
-    if (apiKey) {
-      const url = `${this.client.apiDomain}/api/v1/orders/sync`;
-      headers["X-API-Key"] = apiKey;
-      const res = await fetch(url, { method: "POST", headers, body });
-      if (!res.ok) {
-        const errBody = await res.text().catch(() => "");
-        throw new Error(`Order sync failed [${res.status}]: ${errBody}`);
-      }
-      return res.json();
-    } else if (cookie) {
-      const res = await this.fetchWithSession("/api/v1/orders/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body
-      });
-      return res.json();
-    } else {
-      throw new Error("syncOrder requires either an API key or session cookie.");
+    const url = `${this.client.apiDomain}/api/v1/orders/sync`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ txHash, marketType })
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`Order sync failed [${res.status}]: ${body}`);
     }
+    return res.json();
   }
   // -----------------------------------------------------------------------
   // Platform Pulse (public, no auth required)
@@ -2957,6 +2945,17 @@ var FactoryModule = class {
     return { hash, receipt };
   }
   /**
+   * Returns the floor price of a factory token in USDB.
+   * Only available on factory tokens, not STASIS.
+   */
+  async getFloorPrice(tokenAddress) {
+    return this.client.publicClient.readContract({
+      address: tokenAddress,
+      abi: FACTORYTOKEN_default.abi,
+      functionName: "calculateFloor"
+    });
+  }
+  /**
    * Get claimable USDB rewards for an address on a factory token.
    */
   async getClaimableRewards(tokenAddress, investor) {
@@ -3877,27 +3876,6 @@ var TradingModule = class {
       functionName: "getUSDPrice"
     });
     return price.toString();
-  }
-  /**
-   * Converts a market token position to native tokens via the swap contract.
-   * Auto-approves the input token.
-   */
-  async convertToNative(marketToken, inputToken, inputAmount) {
-    if (!this.client.walletClient || !this.client.walletClient.account) {
-      throw new Error("Stateful initialization (walletClient) is required for write methods.");
-    }
-    await this.approveIfNeeded(inputToken, inputAmount);
-    const { request } = await this.client.publicClient.simulateContract({
-      account: this.client.walletClient.account,
-      address: this.swapAddress,
-      abi: ASwap_default.abi,
-      functionName: "convertToNative",
-      args: [marketToken, inputToken, inputAmount]
-    });
-    const hash = await this.client.walletClient.writeContract(request);
-    const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
-    return { hash, receipt };
   }
   /**
    * Returns the expected output amounts for a given input amount and swap path.
@@ -5671,6 +5649,7 @@ var PredictionMarketsModule = class {
     });
     const hash = await this.client.walletClient.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
+    this._syncTx(hash);
     return { hash, receipt };
   }
   /**
@@ -5873,6 +5852,10 @@ var PredictionMarketsModule = class {
     const hash = await this.client.walletClient.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
+    try {
+      await this.client.api.syncOrder(hash, "public");
+    } catch {
+    }
     return { hash, receipt };
   }
 };
@@ -13293,6 +13276,7 @@ var APrivateTradingMarket_default = {
 };
 
 // src/modules/PrivateMarkets.ts
+var import_viem4 = require("viem");
 var PrivateMarketsModule = class {
   client;
   privateMarketAddress;
@@ -13341,8 +13325,7 @@ var PrivateMarketsModule = class {
   // Write methods
   // -----------------------------------------------------------------------
   /**
-   * Creates a new private prediction market.
-   * Fetches the ecosystem factory fee and attaches it.
+   * Internal: creates a private market on-chain. Use createMarketWithMetadata() instead.
    */
   async createMarket(marketName, symbol, endTime, optionNames, maintoken, privateEvent, frozen, bonding, seedAmount = 0n) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -13375,6 +13358,57 @@ var PrivateMarketsModule = class {
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     await this._syncTx(hash);
     return { hash, receipt };
+  }
+  /**
+   * Creates a private prediction market and registers its metadata on IPFS in one call.
+   * Requires SIWE authentication.
+   *
+   * Returns { hash, receipt, marketTokenAddress, imageUrl, metadata }
+   */
+  async createMarketWithMetadata(options) {
+    const createResult = await this.createMarket(
+      options.marketName,
+      options.symbol,
+      options.endTime,
+      options.optionNames,
+      options.maintoken,
+      options.privateEvent ?? true,
+      options.frozen ?? false,
+      options.bonding ?? 0n,
+      options.seedAmount ?? 0n
+    );
+    if (createResult.receipt.status === "reverted") {
+      throw new Error(`Private market creation reverted (tx: ${createResult.hash})`);
+    }
+    const MARKET_CREATED_TOPIC = (0, import_viem4.keccak256)((0, import_viem4.toBytes)("MarketCreated(address,address,address)"));
+    const marketLog = createResult.receipt.logs.find(
+      (l) => l.address.toLowerCase() === this.privateMarketAddress.toLowerCase() && l.topics[0] === MARKET_CREATED_TOPIC
+    );
+    let marketTokenAddress;
+    if (marketLog && marketLog.topics[1]) {
+      marketTokenAddress = (0, import_viem4.getAddress)("0x" + marketLog.topics[1].slice(26));
+    } else {
+      throw new Error("Could not extract market address from creation logs.");
+    }
+    let imageUrl;
+    if (options.imageUrl) {
+      imageUrl = await this.client.api.uploadImageFromUrl(options.imageUrl, marketTokenAddress);
+    }
+    const metadata = await this.client.api.updateMetadata({
+      address: marketTokenAddress,
+      description: options.description,
+      image: imageUrl,
+      website: options.website,
+      telegram: options.telegram,
+      twitterx: options.twitterx
+    });
+    return {
+      hash: createResult.hash,
+      receipt: createResult.receipt,
+      marketTokenAddress,
+      imageUrl,
+      metadata
+    };
   }
   /**
    * Executes an AMM buy for a private market outcome.
@@ -13456,11 +13490,15 @@ var PrivateMarketsModule = class {
   }
   /**
    * Fills a specific order on a private market.
+   * Auto-approves USDB for the order cost.
    */
   async buyOrder(marketToken, orderId, fill) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
       throw new Error("Stateful initialization (walletClient) is required for write methods.");
     }
+    const costResult = await this.getBuyOrderCost(marketToken, orderId, fill);
+    const totalCost = costResult[2];
+    await this.approveIfNeeded(this.client.usdbAddress, this.privateMarketAddress, totalCost);
     const { request } = await this.client.publicClient.simulateContract({
       account: this.client.walletClient.account,
       address: this.privateMarketAddress,
@@ -13480,6 +13518,7 @@ var PrivateMarketsModule = class {
     if (!this.client.walletClient || !this.client.walletClient.account) {
       throw new Error("Stateful initialization (walletClient) is required for write methods.");
     }
+    await this.approveIfNeeded(this.client.usdbAddress, this.privateMarketAddress, usdbAmount);
     const { request } = await this.client.publicClient.simulateContract({
       account: this.client.walletClient.account,
       address: this.privateMarketAddress,
@@ -13511,6 +13550,7 @@ var PrivateMarketsModule = class {
     const hash = await this.client.walletClient.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     await this.syncOrder(hash);
+    this._syncTx(hash);
     return { hash, receipt };
   }
   /**
@@ -16051,7 +16091,7 @@ var TaxesModule = class {
 };
 
 // src/modules/AgentIdentity.ts
-var import_viem4 = require("viem");
+var import_viem5 = require("viem");
 var IDENTITY_REGISTRY = "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432";
 var identityRegistryAbi = [
   { "inputs": [{ "name": "agentURI", "type": "string" }], "name": "register", "outputs": [{ "name": "agentId", "type": "uint256" }], "stateMutability": "nonpayable", "type": "function" },
@@ -16090,7 +16130,7 @@ var AgentIdentityModule = class {
       description: config?.description || null,
       image: config?.image || null,
       website: "https://launchonbasis.com",
-      profile: `https://launchonbasis.com/profile/${wallet}`,
+      profile: `https://launchonbasis.com/reef/profile/${wallet}`,
       protocol: "basis",
       active: true,
       capabilities: config?.capabilities || ["trading"],
@@ -16138,7 +16178,7 @@ var AgentIdentityModule = class {
     for (const log of receipt.logs) {
       if (log.address.toLowerCase() === this.registryAddress.toLowerCase()) {
         try {
-          const decoded = (0, import_viem4.decodeEventLog)({
+          const decoded = (0, import_viem5.decodeEventLog)({
             abi: identityRegistryAbi,
             data: log.data,
             topics: log.topics
@@ -16323,16 +16363,16 @@ var BasisClient = class _BasisClient {
   constructor(options = {}) {
     const rpcUrl = options.rpcUrl || "https://bsc-dataseed.binance.org/";
     this.apiDomain = options.apiDomain || "https://launchonbasis.com";
-    this.publicClient = (0, import_viem5.createPublicClient)({
+    this.publicClient = (0, import_viem6.createPublicClient)({
       chain: import_chains.bsc,
-      transport: (0, import_viem5.http)(rpcUrl)
+      transport: (0, import_viem6.http)(rpcUrl)
     });
     if (options.privateKey) {
       const account = (0, import_accounts.privateKeyToAccount)(options.privateKey);
-      this.walletClient = (0, import_viem5.createWalletClient)({
+      this.walletClient = (0, import_viem6.createWalletClient)({
         account,
         chain: import_chains.bsc,
-        transport: (0, import_viem5.http)(rpcUrl)
+        transport: (0, import_viem6.http)(rpcUrl)
       });
     }
     if (options.apiKey) {
@@ -16553,6 +16593,26 @@ var BasisClient = class _BasisClient {
       address: this.usdbAddress,
       abi: faucetAbi,
       functionName: "faucet",
+      args: [referrer]
+    });
+    const hash = await this.walletClient.writeContract(request);
+    const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
+    return { hash, receipt };
+  }
+  /**
+   * Sets a referrer for the current wallet. One-time only — reverts if already set.
+   * Use this if you didn't pass a referrer during claimFaucet().
+   */
+  async setReferrer(referrer) {
+    if (!this.walletClient || !this.walletClient.account) {
+      throw new Error("Wallet (privateKey) is required.");
+    }
+    const abi = [{ inputs: [{ name: "_referrer", type: "address" }], name: "setReferrer", outputs: [], stateMutability: "nonpayable", type: "function" }];
+    const { request } = await this.publicClient.simulateContract({
+      account: this.walletClient.account,
+      address: this.usdbAddress,
+      abi,
+      functionName: "setReferrer",
       args: [referrer]
     });
     const hash = await this.walletClient.writeContract(request);

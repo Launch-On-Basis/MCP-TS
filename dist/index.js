@@ -129,6 +129,7 @@ const TOOLS = [
     { name: "get_my_tokens", description: "List all tokens you created with prices and state.", inputSchema: { type: "object", properties: {} } },
     { name: "is_ecosystem_token", description: "Check if a token address is a valid Basis ecosystem token.", inputSchema: { type: "object", properties: { token: { type: "string", description: "Token address" } }, required: ["token"] } },
     { name: "get_fee_amount", description: "Get the factory token creation fee.", inputSchema: { type: "object", properties: {} } },
+    { name: "get_floor_price", description: "Get the USDB floor price for a factory token. Does NOT work on STASIS — only factory-created tokens.", inputSchema: { type: "object", properties: { token: { type: "string", description: "Factory token address (not STASIS)" } }, required: ["token"] } },
     // ── Module 3: Prediction Markets (12+) ─────────────────
     { name: "create_market", description: "Create prediction market. Earn 20% of net trading fees forever.", inputSchema: { type: "object", properties: { question: { type: "string", description: "Market question" }, symbol: { type: "string", description: "Market token symbol" }, outcomes: { type: "array", items: { type: "string" }, description: "e.g. ['Yes', 'No']" }, end_time: { type: "string", description: "ISO date or unix timestamp" }, seed_usdb: { type: "number", description: "USDB seed (min 50, default: 50)" }, description: { type: "string" }, image_url: { type: "string" } }, required: ["question", "symbol", "outcomes", "end_time"] } },
     { name: "bet", description: "Buy shares in a prediction market outcome. UNCAPPED payouts — winners split entire losing pool + general pot, NOT $1/share. Before betting: 1) get_my_shares for existing position 2) estimate_shares_out for new shares 3) get_potential_payout(TOTAL shares = existing + new, usdb=bet_amount) → payout_if_win is your TOTAL payout. Profit = payout_if_win - total_invested.", inputSchema: { type: "object", properties: { market: { type: "string", description: "Market token address" }, outcome: { type: "string", description: "Outcome name or index" }, amount_usdb: { type: "number", description: "USDB to bet" } }, required: ["market", "outcome", "amount_usdb"] } },
@@ -467,6 +468,16 @@ async function handleTool(name, args) {
             case "get_fee_amount": {
                 const fee = await client.factory.getFeeAmount();
                 return ok({ fee_raw: fee.toString(), fee_formatted: fromRaw(fee) });
+            }
+            case "get_floor_price": {
+                const addr = resolveToken(args.token);
+                if ((0, viem_1.getAddress)(addr) === (0, viem_1.getAddress)(client.mainTokenAddress)) {
+                    // STASIS floor = spot price (Stable+ token)
+                    const price = await client.trading.getUSDPrice(addr);
+                    return ok({ token: args.token, floor_price_usdb: fromRaw(price), note: "STASIS is Stable+ — floor equals spot price." });
+                }
+                const floor = await client.factory.getFloorPrice(addr);
+                return ok({ token: args.token, floor_price_usdb: fromRaw(floor) });
             }
             // ── Module 3: Prediction Markets ────────────────────
             case "create_market": {

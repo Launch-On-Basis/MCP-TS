@@ -393,7 +393,7 @@ declare class BasisAPI {
     /**
      * POST /api/v1/orders/sync — sync an on-chain order event to the database.
      * Call after listOrder, cancelOrder, or buyOrder transactions.
-     * Accepts either session cookie or API key for auth.
+     * No authentication required (public endpoint).
      */
     syncOrder(txHash: string, marketType?: string): Promise<{
         success: boolean;
@@ -858,6 +858,11 @@ declare class FactoryModule {
         receipt: viem.TransactionReceipt;
     }>;
     /**
+     * Returns the floor price of a factory token in USDB.
+     * Only available on factory tokens, not STASIS.
+     */
+    getFloorPrice(tokenAddress: Address): Promise<bigint>;
+    /**
      * Get claimable USDB rewards for an address on a factory token.
      */
     getClaimableRewards(tokenAddress: Address, investor: Address): Promise<bigint>;
@@ -965,14 +970,6 @@ declare class TradingModule {
      * Fetches the USD price of the token from the token's contract.
      */
     getUSDPrice(tokenAddress: Address): Promise<string>;
-    /**
-     * Converts a market token position to native tokens via the swap contract.
-     * Auto-approves the input token.
-     */
-    convertToNative(marketToken: Address, inputToken: Address, inputAmount: bigint): Promise<{
-        hash: `0x${string}`;
-        receipt: viem.TransactionReceipt;
-    }>;
     /**
      * Returns the expected output amounts for a given input amount and swap path.
      */
@@ -1548,12 +1545,39 @@ declare class PrivateMarketsModule {
     private _syncTx;
     private syncOrder;
     /**
-     * Creates a new private prediction market.
-     * Fetches the ecosystem factory fee and attaches it.
+     * Internal: creates a private market on-chain. Use createMarketWithMetadata() instead.
      */
-    createMarket(marketName: string, symbol: string, endTime: bigint, optionNames: string[], maintoken: Address, privateEvent: boolean, frozen: boolean, bonding: bigint, seedAmount?: bigint): Promise<{
+    private createMarket;
+    /**
+     * Creates a private prediction market and registers its metadata on IPFS in one call.
+     * Requires SIWE authentication.
+     *
+     * Returns { hash, receipt, marketTokenAddress, imageUrl, metadata }
+     */
+    createMarketWithMetadata(options: {
+        marketName: string;
+        symbol: string;
+        endTime: bigint;
+        optionNames: string[];
+        maintoken: Address;
+        privateEvent?: boolean;
+        frozen?: boolean;
+        bonding?: bigint;
+        seedAmount?: bigint;
+        description?: string;
+        imageUrl?: string;
+        website?: string;
+        telegram?: string;
+        twitterx?: string;
+    }): Promise<{
         hash: `0x${string}`;
         receipt: viem.TransactionReceipt;
+        marketTokenAddress: `0x${string}`;
+        imageUrl: string | undefined;
+        metadata: {
+            url: string;
+            cid: string;
+        };
     }>;
     /**
      * Executes an AMM buy for a private market outcome.
@@ -1586,6 +1610,7 @@ declare class PrivateMarketsModule {
     }>;
     /**
      * Fills a specific order on a private market.
+     * Auto-approves USDB for the order cost.
      */
     buyOrder(marketToken: Address, orderId: bigint, fill: bigint): Promise<{
         hash: `0x${string}`;
@@ -2011,6 +2036,14 @@ declare class BasisClient {
      * Optionally pass a referrer address for the referral system.
      */
     claimFaucet(referrer?: `0x${string}`): Promise<{
+        hash: string;
+        receipt: any;
+    }>;
+    /**
+     * Sets a referrer for the current wallet. One-time only — reverts if already set.
+     * Use this if you didn't pass a referrer during claimFaucet().
+     */
+    setReferrer(referrer: `0x${string}`): Promise<{
         hash: string;
         receipt: any;
     }>;
