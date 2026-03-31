@@ -342,4 +342,4 @@ Then anyone can use it with:
 
 ## License
 
-MIT
+Non-Commercial — free to use, modify, and distribute. No selling without written permission. See [LICENSE](LICENSE) for details.
