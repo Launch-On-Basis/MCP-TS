@@ -1,6 +1,6 @@
 # Basis MCP Server
 
-172 tools for the Basis Markets protocol — trading, token creation, prediction markets, staking, loans, vesting, order books, taxes, social, and more. Works with Claude Desktop, Claude Code, and any MCP-compatible client.
+172 tools for the Basis protocol — trading, token creation, prediction markets, staking, loans, vesting, order books, taxes, social, and more. Works with Claude Desktop, Claude Code, and any MCP-compatible client.
 
 ## Quick Start
 
