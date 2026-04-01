@@ -1,5 +1,5 @@
 // src/BasisClient.ts
-import { createPublicClient, createWalletClient, http } from "viem";
+import { createPublicClient, createWalletClient, http, custom } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { bsc } from "viem/chains";
 import { SiweMessage } from "siwe";
@@ -2730,7 +2730,7 @@ var FactoryModule = class {
       ],
       value: feeAmount
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     return { hash, receipt };
   }
@@ -2801,7 +2801,7 @@ var FactoryModule = class {
       abi: FACTORYTOKEN_default.abi,
       functionName: "DisableFreeze"
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return receipt;
@@ -2817,7 +2817,7 @@ var FactoryModule = class {
       functionName: "SetWhitelistedWallet",
       args: [wallets, amount, tag]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return receipt;
@@ -2889,7 +2889,7 @@ var FactoryModule = class {
       abi: FACTORYTOKEN_default.abi,
       functionName: "claimRewards"
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -2927,7 +2927,7 @@ var FactoryModule = class {
       functionName: "RemoveWhitelist",
       args: [wallet]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return receipt;
@@ -3613,7 +3613,7 @@ var TradingModule = class {
         functionName: "approve",
         args: [this.swapAddress, amount]
       });
-      const hash = await this.client.walletClient.writeContract(request);
+      const hash = await this.client.writeContract(request);
       await this.client.publicClient.waitForTransactionReceipt({ hash });
     }
   }
@@ -3649,7 +3649,7 @@ var TradingModule = class {
       functionName: "buyTokens",
       args: [amount, minOut, path, wrapTokens]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -3672,7 +3672,7 @@ var TradingModule = class {
       functionName: "sellTokens",
       args: [amount, minOut, path, swapToETH]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -3733,7 +3733,7 @@ var TradingModule = class {
       functionName: "leverageBuy",
       args: [amount, minOut, path, numberOfDays]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -3753,7 +3753,7 @@ var TradingModule = class {
       functionName: "partialLoanSell",
       args: [loanId, percentage, isLeverage, minOut]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -5563,7 +5563,7 @@ var PredictionMarketsModule = class {
         functionName: "approve",
         args: [this.marketTradingAddress, amount]
       });
-      const hash = await this.client.walletClient.writeContract(request);
+      const hash = await this.client.writeContract(request);
       await this.client.publicClient.waitForTransactionReceipt({ hash });
     }
   }
@@ -5597,7 +5597,7 @@ var PredictionMarketsModule = class {
       args: [marketName, symbol, endTime, optionNames, maintoken, frozen, bonding, seedAmount],
       value: feeAmount
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -5668,7 +5668,7 @@ var PredictionMarketsModule = class {
       functionName: "buy",
       args: [marketToken, outcomeId, inputToken, inputAmount, minUsdb, minShares]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -5687,7 +5687,7 @@ var PredictionMarketsModule = class {
       functionName: "redeem",
       args: [marketToken]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -5799,7 +5799,7 @@ var PredictionMarketsModule = class {
       functionName: "buyOrdersAndContract",
       args: [marketToken, outcomeId, orderIds, inputToken, totalInput, minShares]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     try {
@@ -5835,7 +5835,7 @@ var OrderBookModule = class {
         functionName: "approve",
         args: [this.marketTradingAddress, amount]
       });
-      const hash = await this.client.walletClient.writeContract(request);
+      const hash = await this.client.writeContract(request);
       await this.client.publicClient.waitForTransactionReceipt({ hash });
     }
   }
@@ -5853,7 +5853,7 @@ var OrderBookModule = class {
       functionName: "listOrder",
       args: [marketToken, outcomeId, amount, pricePerShare]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     await this.syncOrder(hash);
     return { hash, receipt };
@@ -5872,7 +5872,7 @@ var OrderBookModule = class {
       functionName: "cancelOrder",
       args: [marketToken, orderId]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     await this.syncOrder(hash);
     return { hash, receipt };
@@ -5894,7 +5894,7 @@ var OrderBookModule = class {
       functionName: "buyOrder",
       args: [marketToken, orderId, fill]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     await this.syncOrder(hash);
     return { hash, receipt };
@@ -5914,7 +5914,7 @@ var OrderBookModule = class {
       functionName: "buyMultipleOrders",
       args: [marketToken, orderIds, usdbAmount]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     await this.syncOrder(hash);
     return { hash, receipt };
@@ -6639,7 +6639,7 @@ var LoansModule = class {
         functionName: "approve",
         args: [spender, amount]
       });
-      const hash = await this.client.walletClient.writeContract(request);
+      const hash = await this.client.writeContract(request);
       await this.client.publicClient.waitForTransactionReceipt({ hash });
     }
   }
@@ -6658,7 +6658,7 @@ var LoansModule = class {
       functionName: "takeLoan",
       args: [ecosystem, collateral, amount, daysCount]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -6686,7 +6686,7 @@ var LoansModule = class {
       functionName: "repayLoan",
       args: [hubId]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -6717,7 +6717,7 @@ var LoansModule = class {
       functionName: "extendLoan",
       args: [hubId, addDays, payInStable, refinance]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -6736,7 +6736,7 @@ var LoansModule = class {
       functionName: "claimLiquidation",
       args: [hubId]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -6773,7 +6773,7 @@ var LoansModule = class {
       functionName: "increaseLoan",
       args: [hubId, amountToAdd]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -6795,7 +6795,7 @@ var LoansModule = class {
       functionName: "hubPartialLoanSell",
       args: [hubId, percentage, isLeverage, minOut]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -8243,7 +8243,7 @@ var VestingModule = class {
         functionName: "approve",
         args: [spender, amount]
       });
-      const hash = await this.client.walletClient.writeContract(request);
+      const hash = await this.client.writeContract(request);
       await this.client.publicClient.waitForTransactionReceipt({ hash });
     }
   }
@@ -8276,7 +8276,7 @@ var VestingModule = class {
       args: [beneficiary, token, totalAmount, startTime, durationInDays, timeUnit, memo, ecosystem],
       value: feeAmount
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -8298,7 +8298,7 @@ var VestingModule = class {
       args: [beneficiary, token, totalAmount, unlockTime, memo, ecosystem],
       value: feeAmount
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -8317,7 +8317,7 @@ var VestingModule = class {
       functionName: "claimTokens",
       args: [vestingId]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -8336,7 +8336,7 @@ var VestingModule = class {
       functionName: "takeLoanOnVesting",
       args: [vestingId]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -8365,7 +8365,7 @@ var VestingModule = class {
       functionName: "repayLoanOnVesting",
       args: [vestingId]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -8411,7 +8411,7 @@ var VestingModule = class {
       args: [beneficiaries, token, totalAmounts, userMemos, startTime, durationInDays, timeUnit, ecosystem],
       value: feeAmount
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -8435,7 +8435,7 @@ var VestingModule = class {
       args: [beneficiaries, token, totalAmounts, unlockTime, userMemos, ecosystem],
       value: feeAmount
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -8454,7 +8454,7 @@ var VestingModule = class {
       functionName: "changeBeneficiary",
       args: [vestingId, newBeneficiary]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -8473,7 +8473,7 @@ var VestingModule = class {
       functionName: "extendVestingPeriod",
       args: [vestingId, additionalDays]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -8496,7 +8496,7 @@ var VestingModule = class {
       functionName: "addTokensToVesting",
       args: [vestingId, additionalAmount]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -8515,7 +8515,7 @@ var VestingModule = class {
       functionName: "transferCreatorRole",
       args: [vestingId, newCreator]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -9683,7 +9683,7 @@ var StakingModule = class {
         functionName: "approve",
         args: [spender, amount]
       });
-      const hash = await this.client.walletClient.writeContract(request);
+      const hash = await this.client.writeContract(request);
       await this.client.publicClient.waitForTransactionReceipt({ hash });
     }
   }
@@ -9703,7 +9703,7 @@ var StakingModule = class {
       functionName: "buy",
       args: [amount]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -9722,7 +9722,7 @@ var StakingModule = class {
       functionName: "sell",
       args: [shares, claimUSDB, minUSDB]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -9742,7 +9742,7 @@ var StakingModule = class {
       functionName: "lock",
       args: [shares]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -9761,7 +9761,7 @@ var StakingModule = class {
       functionName: "unlock",
       args: [shares]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -9781,7 +9781,7 @@ var StakingModule = class {
       functionName: "borrow",
       args: [stasisAmountToBorrow, days]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -9808,7 +9808,7 @@ var StakingModule = class {
       abi: AStasisVault_default.abi,
       functionName: "repay"
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -9838,7 +9838,7 @@ var StakingModule = class {
       functionName: "extendLoan",
       args: [daysToAdd, payInUSDB, refinance]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -9912,7 +9912,7 @@ var StakingModule = class {
       functionName: "addToLoan",
       args: [additionalStasisToBorrow]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -9930,7 +9930,7 @@ var StakingModule = class {
       abi: AStasisVault_default.abi,
       functionName: "settleLiquidation"
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -11057,7 +11057,7 @@ var MarketResolverModule = class {
         functionName: "approve",
         args: [spender, amount]
       });
-      const hash = await this.client.walletClient.writeContract(request);
+      const hash = await this.client.writeContract(request);
       await this.client.publicClient.waitForTransactionReceipt({ hash });
     }
   }
@@ -11085,7 +11085,7 @@ var MarketResolverModule = class {
       functionName: "proposeOutcome",
       args: [marketToken, outcomeId]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -11111,7 +11111,7 @@ var MarketResolverModule = class {
       functionName: "dispute",
       args: [marketToken, newOutcomeId]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -11130,7 +11130,7 @@ var MarketResolverModule = class {
       functionName: "vote",
       args: [marketToken, outcomeId]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -11156,7 +11156,7 @@ var MarketResolverModule = class {
       functionName: "stake",
       args: [token]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -11175,7 +11175,7 @@ var MarketResolverModule = class {
       functionName: "unstake",
       args: [token]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -11194,7 +11194,7 @@ var MarketResolverModule = class {
       functionName: "finalizeUncontested",
       args: [marketToken]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -11213,7 +11213,7 @@ var MarketResolverModule = class {
       functionName: "finalizeMarket",
       args: [marketToken]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -11239,7 +11239,7 @@ var MarketResolverModule = class {
       functionName: "veto",
       args: [marketToken, proposedOutcome]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -11258,7 +11258,7 @@ var MarketResolverModule = class {
       functionName: "claimBounty",
       args: [marketToken]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -11277,7 +11277,7 @@ var MarketResolverModule = class {
       functionName: "claimEarlyBounty",
       args: [marketToken, round]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -13253,7 +13253,7 @@ var PrivateMarketsModule = class {
         functionName: "approve",
         args: [spender, amount]
       });
-      const hash = await this.client.walletClient.writeContract(request);
+      const hash = await this.client.writeContract(request);
       await this.client.publicClient.waitForTransactionReceipt({ hash });
     }
   }
@@ -13304,7 +13304,7 @@ var PrivateMarketsModule = class {
       args: [marketName, symbol, endTime, optionNames, maintoken, privateEvent, frozen, bonding, seedAmount],
       value: feeAmount
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     await this._syncTx(hash);
     return { hash, receipt };
@@ -13376,7 +13376,7 @@ var PrivateMarketsModule = class {
       functionName: "buy",
       args: [marketToken, outcomeId, inputToken, inputAmount, minUsdb, minShares]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     await this._syncTx(hash);
     return { hash, receipt };
@@ -13395,7 +13395,7 @@ var PrivateMarketsModule = class {
       functionName: "redeem",
       args: [marketToken]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     await this._syncTx(hash);
     return { hash, receipt };
@@ -13414,7 +13414,7 @@ var PrivateMarketsModule = class {
       functionName: "listOrder",
       args: [marketToken, outcomeId, amount, pricePerShare]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     await this.syncOrder(hash);
     return { hash, receipt };
@@ -13433,7 +13433,7 @@ var PrivateMarketsModule = class {
       functionName: "cancelOrder",
       args: [marketToken, orderId]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     await this.syncOrder(hash);
     return { hash, receipt };
@@ -13456,7 +13456,7 @@ var PrivateMarketsModule = class {
       functionName: "buyOrder",
       args: [marketToken, orderId, fill]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     await this.syncOrder(hash);
     return { hash, receipt };
@@ -13476,7 +13476,7 @@ var PrivateMarketsModule = class {
       functionName: "buyMultipleOrders",
       args: [marketToken, orderIds, usdbAmount]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     await this.syncOrder(hash);
     return { hash, receipt };
@@ -13497,7 +13497,7 @@ var PrivateMarketsModule = class {
       functionName: "buyOrdersAndContract",
       args: [marketToken, outcomeId, orderIds, inputToken, totalInput, minShares]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     await this.syncOrder(hash);
     this._syncTx(hash);
@@ -13517,7 +13517,7 @@ var PrivateMarketsModule = class {
       functionName: "vote",
       args: [marketToken, outcomeId]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     await this._syncTx(hash);
     return { hash, receipt };
@@ -13536,7 +13536,7 @@ var PrivateMarketsModule = class {
       functionName: "finalize",
       args: [marketToken]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     await this._syncTx(hash);
     return { hash, receipt };
@@ -13555,7 +13555,7 @@ var PrivateMarketsModule = class {
       functionName: "claimBounty",
       args: [marketToken]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     await this._syncTx(hash);
     return { hash, receipt };
@@ -13574,7 +13574,7 @@ var PrivateMarketsModule = class {
       functionName: "manageVoter",
       args: [marketToken, voter, status]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     await this._syncTx(hash);
     return { hash, receipt };
@@ -13593,7 +13593,7 @@ var PrivateMarketsModule = class {
       functionName: "togglePrivateEventBuyers",
       args: [marketToken, buyers, status]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     await this._syncTx(hash);
     return { hash, receipt };
@@ -13612,7 +13612,7 @@ var PrivateMarketsModule = class {
       functionName: "DisableFreeze",
       args: [marketToken]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     await this._syncTx(hash);
     return { hash, receipt };
@@ -13631,7 +13631,7 @@ var PrivateMarketsModule = class {
       functionName: "manageWhitelist",
       args: [marketToken, wallets, amount, tag, status]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     await this._syncTx(hash);
     return { hash, receipt };
@@ -15976,7 +15976,7 @@ var TaxesModule = class {
       functionName: "startSurgeTax",
       args: [startRate, endRate, duration, token]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -15995,7 +15995,7 @@ var TaxesModule = class {
       functionName: "endSurgeTax",
       args: [token]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -16014,7 +16014,7 @@ var TaxesModule = class {
       functionName: "addDevShare",
       args: [token, wallet, basisPoints]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -16033,7 +16033,7 @@ var TaxesModule = class {
       functionName: "removeDevShare",
       args: [token, wallet]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -16121,7 +16121,7 @@ var AgentIdentityModule = class {
       functionName: "register",
       args: [uri]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     let agentId = 0n;
@@ -16269,7 +16269,7 @@ var AgentIdentityModule = class {
       functionName: "setAgentURI",
       args: [agentId, newURI]
     });
-    const hash = await this.client.walletClient.writeContract(request);
+    const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     this._syncTx(hash);
     return { hash, receipt };
@@ -16277,9 +16277,43 @@ var AgentIdentityModule = class {
 };
 
 // src/BasisClient.ts
+var MEGAFUEL_RPC = "https://bsc-megafuel.nodereal.io/";
+function createGaslessTransport(rpcUrl) {
+  const regularTransport = http(rpcUrl);
+  return custom({
+    async request({ method, params }) {
+      const transport = regularTransport({ chain: bsc });
+      if (method === "eth_sendRawTransaction") {
+        try {
+          const megafuelRes = await fetch(MEGAFUEL_RPC, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ jsonrpc: "2.0", method, params, id: 1 })
+          });
+          const megafuelResult = await megafuelRes.json();
+          if (!megafuelResult.error) {
+            return megafuelResult.result;
+          }
+        } catch {
+        }
+        const err = new Error("GASLESS_REJECTED");
+        err.code = "GASLESS_REJECTED";
+        throw err;
+      }
+      if (method === "eth_gasPrice") {
+        return "0x0";
+      }
+      if (method === "eth_maxPriorityFeePerGas") {
+        return "0x0";
+      }
+      return transport.request({ method, params });
+    }
+  });
+}
 var BasisClient = class _BasisClient {
   publicClient;
   walletClient;
+  _fallbackWalletClient;
   apiDomain;
   usdbAddress;
   mainTokenAddress;
@@ -16302,6 +16336,21 @@ var BasisClient = class _BasisClient {
   // Auth state
   _sessionCookie = null;
   _apiKey = null;
+  /**
+   * Write a contract call with automatic gasless fallback.
+   * Tries megafuel (gasless) first. If rejected, retries with regular RPC.
+   */
+  async writeContract(request) {
+    if (!this.walletClient) throw new Error("Wallet required for write operations.");
+    try {
+      return await this.walletClient.writeContract(request);
+    } catch (e) {
+      if (this._fallbackWalletClient && (e.code === "GASLESS_REJECTED" || e.message?.includes("GASLESS_REJECTED") || e.details?.includes("GASLESS_REJECTED"))) {
+        return await this._fallbackWalletClient.writeContract(request);
+      }
+      throw e;
+    }
+  }
   /** Session cookie for authenticated API requests. */
   get sessionCookie() {
     return this._sessionCookie;
@@ -16319,11 +16368,25 @@ var BasisClient = class _BasisClient {
     });
     if (options.privateKey) {
       const account = privateKeyToAccount(options.privateKey);
-      this.walletClient = createWalletClient({
-        account,
-        chain: bsc,
-        transport: http(rpcUrl)
-      });
+      const gasless = options.gasless !== false;
+      if (gasless) {
+        this.walletClient = createWalletClient({
+          account,
+          chain: bsc,
+          transport: createGaslessTransport(rpcUrl)
+        });
+        this._fallbackWalletClient = createWalletClient({
+          account,
+          chain: bsc,
+          transport: http(rpcUrl)
+        });
+      } else {
+        this.walletClient = createWalletClient({
+          account,
+          chain: bsc,
+          transport: http(rpcUrl)
+        });
+      }
     }
     if (options.apiKey) {
       this._apiKey = options.apiKey;
@@ -16545,7 +16608,7 @@ var BasisClient = class _BasisClient {
       functionName: "faucet",
       args: [referrer]
     });
-    const hash = await this.walletClient.writeContract(request);
+    const hash = await this.writeContract(request);
     const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
     return { hash, receipt };
   }
@@ -16565,7 +16628,7 @@ var BasisClient = class _BasisClient {
       functionName: "setReferrer",
       args: [referrer]
     });
-    const hash = await this.walletClient.writeContract(request);
+    const hash = await this.writeContract(request);
     const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
     return { hash, receipt };
   }

@@ -4,6 +4,8 @@
 
 172 tools for the Basis protocol — trading, token creation, prediction markets, staking, loans, vesting, order books, taxes, social, and more. Works with Claude Desktop, Claude Code, and any MCP-compatible client.
 
+The SDK is bundled inside — no separate installation required.
+
 ## Requirements
 
 - [Node.js](https://nodejs.org/) v18 or higher
@@ -81,7 +83,7 @@ Open a new chat and ask:
 | `close_leverage` | write | Close/partially close a leverage position. |
 | `get_leverage_positions` | read | List all leverage positions. |
 
-### Token Creation (9)
+### Token Creation (10)
 | Tool | Type | Description |
 |------|------|-------------|
 | `create_token` | write | Create a new token. Earn 20% of all trades forever. |
@@ -93,6 +95,7 @@ Open a new chat and ask:
 | `get_my_tokens` | read | List tokens you created. |
 | `is_ecosystem_token` | read | Check if address is a Basis token. |
 | `get_fee_amount` | read | Get token creation fee. |
+| `get_floor_price` | read | Get floor price for a token. |
 
 ### Prediction Markets (17)
 | Tool | Type | Description |
@@ -162,7 +165,7 @@ Open a new chat and ask:
 | `remove_whitelist` | write | Remove wallet from whitelist. |
 | `update_my_profile` | write | Update username or social links. |
 
-### Agent Identity (7)
+### Agent Identity (8)
 | Tool | Type | Description |
 |------|------|-------------|
 | `register_agent` | write | Register as AI agent on-chain (ERC-8004). |
@@ -174,7 +177,7 @@ Open a new chat and ask:
 | `get_agent_metadata` | read | Get agent metadata by key. |
 | `set_agent_uri` | write | Update agent metadata URI. |
 
-### Vesting (14)
+### Vesting (18)
 | Tool | Type | Description |
 |------|------|-------------|
 | `create_gradual_vesting` | write | Create gradual vesting schedule. |
@@ -196,7 +199,7 @@ Open a new chat and ask:
 | `transfer_vesting_creator` | write | Transfer creator role. |
 | `get_vesting_events` | read | Vesting event history. |
 
-### Order Book (6)
+### Order Book (7)
 | Tool | Type | Description |
 |------|------|-------------|
 | `list_order` | write | Place limit sell order on prediction market. |
@@ -219,7 +222,7 @@ Open a new chat and ask:
 | `add_dev_share` | write | Add dev fee share. |
 | `remove_dev_share` | write | Remove dev fee share. |
 
-### Reef (14)
+### The Reef (14)
 | Tool | Type | Description |
 |------|------|-------------|
 | `get_reef_feed` | read | Get reef posts feed. |
@@ -271,7 +274,7 @@ Open a new chat and ask:
 | `request_twitter_challenge` | read | Get Twitter verification challenge. |
 | `verify_twitter` | write | Verify a challenge tweet. |
 
-### Other
+### Other (21)
 | Tool | Type | Description |
 |------|------|-------------|
 | `get_final_outcome` | read | Resolved outcome of a finalized market. |
@@ -298,7 +301,7 @@ Open a new chat and ask:
 
 ## How It Works
 
-The MCP server wraps the [Basis JS SDK](https://github.com/basis-markets/basis-sdk-js) into the Model Context Protocol. Each tool maps to one or more SDK methods, handling:
+The MCP server wraps the [Basis TS SDK](https://github.com/Launch-On-Basis/SDK-TS) into the Model Context Protocol. The SDK is bundled inside — no separate installation required. Each tool maps to one or more SDK methods, handling:
 
 - **Token resolution** — pass "STASIS" or a raw address
 - **Amount conversion** — human-readable numbers (e.g. `50` = 50 USDB) converted to 18-decimal BigInts internally
@@ -309,7 +312,7 @@ The MCP server wraps the [Basis JS SDK](https://github.com/basis-markets/basis-s
 ## Using with Claude Code
 
 ```bash
-claude --mcp-server "node /path/to/basis-mcp-server/dist/index.js"
+claude --mcp-server "node /path/to/MCP-TS/dist/index.js"
 ```
 
 Or add to your project's `.mcp.json`:
@@ -318,7 +321,7 @@ Or add to your project's `.mcp.json`:
 {
   "basis": {
     "command": "node",
-    "args": ["/path/to/basis-mcp-server/dist/index.js"],
+    "args": ["/path/to/MCP-TS/dist/index.js"],
     "env": {
       "BASIS_PRIVATE_KEY": "0xYOUR_KEY"
     }

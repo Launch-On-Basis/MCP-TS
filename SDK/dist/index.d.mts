@@ -1949,6 +1949,7 @@ interface BasisClientOptions {
     privateKey?: `0x${string}`;
     apiKey?: string;
     apiDomain?: string;
+    gasless?: boolean;
     factoryAddress?: Address;
     swapAddress?: Address;
     marketTradingAddress?: Address;
@@ -1967,6 +1968,7 @@ interface BasisClientOptions {
 declare class BasisClient {
     publicClient: PublicClient;
     walletClient?: WalletClient;
+    private _fallbackWalletClient?;
     apiDomain: string;
     usdbAddress: Address;
     mainTokenAddress: Address;
@@ -1986,6 +1988,11 @@ declare class BasisClient {
     agent: AgentIdentityModule;
     private _sessionCookie;
     private _apiKey;
+    /**
+     * Write a contract call with automatic gasless fallback.
+     * Tries megafuel (gasless) first. If rejected, retries with regular RPC.
+     */
+    writeContract(request: any): Promise<`0x${string}`>;
     /** Session cookie for authenticated API requests. */
     get sessionCookie(): string | null;
     /** API key for v1 data endpoints. */
