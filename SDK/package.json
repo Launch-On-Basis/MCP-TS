@@ -1,0 +1,56 @@
+{
+  "name": "basis-sdk",
+  "version": "0.1.0-beta.1",
+  "description": "Basis DeFi SDK — trade, lend, stake, predict, and build on BNB Chain",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "basis",
+    "defi",
+    "sdk",
+    "bnb",
+    "bsc",
+    "prediction-markets",
+    "trading",
+    "lending",
+    "staking",
+    "ai-agents",
+    "erc-8004",
+    "viem"
+  ],
+  "author": "Basis Protocol",
+  "license": "Elastic-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Launch-On-Basis/basis-sdk.git"
+  },
+  "homepage": "https://launchonbasis.com",
+  "dependencies": {
+    "sharp": "^0.34.5",
+    "siwe": "^3.0.0",
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ]
+}

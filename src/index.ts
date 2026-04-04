@@ -16,15 +16,15 @@ import { BasisClient } from "basis-sdk-js";
 import { parseUnits, formatUnits, parseAbi, getAddress, type Address } from "viem";
 
 // ============================================================
-// Constants
+// Constants (fallback — overridden by launchonbasis.com/contracts.json on startup)
 // ============================================================
 const ADDRESSES: Record<string, Address> = {
-  USDB: "0x75bE26F8A868d57D69Cd949955e03EE22be04D95",
-  USDC: "0x75bE26F8A868d57D69Cd949955e03EE22be04D95",
-  STASIS: "0x60fefefD2C1752AFCD088B21f8E4dbf4670c6621",
-  MAINTOKEN: "0x60fefefD2C1752AFCD088B21f8E4dbf4670c6621",
-  PREDICTION: "0xb588B74C012df932A0AFce01A71b89Ec989bfDE9",
-  MARKETTRADING: "0xb588B74C012df932A0AFce01A71b89Ec989bfDE9",
+  USDB: "0x42bcF288e51345c6070F37f30332ee5090fC36BF",
+  USDC: "0x42bcF288e51345c6070F37f30332ee5090fC36BF",
+  STASIS: "0x3067ce754a36d0a2A1b215C4C00315d9Da49EF15",
+  MAINTOKEN: "0x3067ce754a36d0a2A1b215C4C00315d9Da49EF15",
+  PREDICTION: "0x396216fc9d2c220afD227B59097cf97B7dEaCb57",
+  MARKETTRADING: "0x396216fc9d2c220afD227B59097cf97B7dEaCb57",
 };
 
 // ============================================================
@@ -40,11 +40,36 @@ let client: BasisClient;
 let walletAddress: Address;
 let tokenCache: Map<string, Address> = new Map();
 
+async function fetchContractAddresses() {
+  try {
+    const res = await fetch("https://launchonbasis.com/contracts.json");
+    if (!res.ok) return;
+    const data = await res.json() as Record<string, string>;
+    if (data.usdb) { ADDRESSES.USDB = data.usdb as Address; ADDRESSES.USDC = data.usdb as Address; }
+    if (data.mainToken) { ADDRESSES.STASIS = data.mainToken as Address; ADDRESSES.MAINTOKEN = data.mainToken as Address; }
+    if (data.marketTrading) { ADDRESSES.PREDICTION = data.marketTrading as Address; ADDRESSES.MARKETTRADING = data.marketTrading as Address; }
+    console.error("Loaded contract addresses from launchonbasis.com");
+  } catch {
+    console.error("Using fallback contract addresses");
+  }
+}
+
 async function initClient() {
-  // Always SIWE auth first (gets session cookie), then override API key if provided
-  client = await BasisClient.create({ privateKey: PRIVATE_KEY as `0x${string}` });
-  if (process.env.BASIS_API_KEY) {
-    (client as any)._apiKey = process.env.BASIS_API_KEY;
+  await fetchContractAddresses();
+  try {
+    client = await BasisClient.create({
+      privateKey: PRIVATE_KEY as `0x${string}`,
+      ...(process.env.BASIS_API_KEY ? { apiKey: process.env.BASIS_API_KEY } : {}),
+    });
+  } catch (e: any) {
+    if (e?.message?.includes("API key already exists") && !process.env.BASIS_API_KEY) {
+      console.error("API key exists on server but not provided. Set BASIS_API_KEY env var. Retrying without API key provisioning...");
+      // Create without SIWE API key provisioning — session cookie still works for most calls
+      client = new BasisClient({ privateKey: PRIVATE_KEY as `0x${string}` });
+      await (client as any).authenticate(client.walletClient!.account!.address);
+    } else {
+      throw e;
+    }
   }
   walletAddress = client.walletClient!.account!.address;
   await refreshTokenCache();
@@ -293,7 +318,6 @@ const TOOLS = [
   { name: "get_voter_choice", description: "Get what a voter chose in a dispute round.", inputSchema: { type: "object" as const, properties: { market: { type: "string" }, round: { type: "number" }, voter: { type: "string", description: "Default: your wallet" } }, required: ["market", "round"] } },
 
   // ── Sync helpers ───────────────────────────────────
-  { name: "sync_faucet", description: "Sync a faucet claim transaction.", inputSchema: { type: "object" as const, properties: { tx_hash: { type: "string" } }, required: ["tx_hash"] } },
   { name: "sync_loan", description: "Sync a loan transaction.", inputSchema: { type: "object" as const, properties: { tx_hash: { type: "string" } }, required: ["tx_hash"] } },
   { name: "sync_order", description: "Sync an order book transaction.", inputSchema: { type: "object" as const, properties: { tx_hash: { type: "string" } }, required: ["tx_hash"] } },
 
@@ -332,8 +356,8 @@ const TOOLS = [
   { name: "upload_image_from_url", description: "Upload an image from URL to Basis.", inputSchema: { type: "object" as const, properties: { image_url: { type: "string" }, contract_address: { type: "string" } }, required: ["image_url"] } },
 
   // ── Utility ────────────────────────────────────────
-  { name: "claim_faucet", description: "Claim test USDB from faucet (one per wallet). Optionally set a referrer.", inputSchema: { type: "object" as const, properties: { referrer: { type: "string", description: "Referrer wallet address (optional)" } } } },
-  { name: "set_referrer", description: "Set a referrer for your wallet. One-time only — reverts if already set.", inputSchema: { type: "object" as const, properties: { referrer: { type: "string", description: "Referrer wallet address" } }, required: ["referrer"] } },
+  { name: "claim_faucet", description: "Claim daily USDB from faucet (up to 500/day based on eligibility signals). Requires SIWE session. Check get_faucet_status first for eligibility.", inputSchema: { type: "object" as const, properties: { referrer: { type: "string", description: "Referrer wallet address (optional)" } } } },
+  { name: "get_faucet_status", description: "Check faucet eligibility — signals, claimable amount, cooldown timer. Must be authenticated.", inputSchema: { type: "object" as const, properties: {} } },
   { name: "sync_transaction", description: "Manually sync a transaction to the backend.", inputSchema: { type: "object" as const, properties: { tx_hash: { type: "string" } }, required: ["tx_hash"] } },
 ];
 
@@ -953,7 +977,6 @@ async function handleTool(name: string, args: any): Promise<any> {
 
       // ── Sync helpers ───────────────────────────────────
 
-      case "sync_faucet": { return ok(await client.api.syncFaucet(args.tx_hash)); }
       case "sync_loan": { return ok(await client.api.syncLoan(args.tx_hash)); }
       case "sync_order": { return ok(await client.api.syncOrder(args.tx_hash)); }
 
@@ -1033,9 +1056,9 @@ async function handleTool(name: string, args: any): Promise<any> {
 
       // ── Utility ────────────────────────────────────────
 
-      case "claim_faucet": { const tx = await client.claimFaucet(args.referrer || '0x0000000000000000000000000000000000000000'); return txResult(tx, { message: "Claimed test USDB" }); }
+      case "claim_faucet": { return ok(await client.claimFaucet(args.referrer)); }
+      case "get_faucet_status": { return ok(await client.api.getFaucetStatus()); }
       case "sync_transaction": { return ok(await client.api.syncTransaction(args.tx_hash)); }
-      case "set_referrer": { const tx = await (client as any).setReferrer(args.referrer as Address); return txResult(tx); }
 
       default: return err(`Unknown tool: ${name}`);
     }
