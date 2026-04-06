@@ -980,7 +980,7 @@ var BasisAPI = class {
   /**
    * POST /api/moltbook/verify — complete linking by providing the Moltbook
    * post containing the challenge code. The challenge post counts as the
-   * first verified post (50 points).
+   * first verified post.
    *
    * @param moltbookName - The Moltbook agent/username being linked.
    * @param postId - Post ID (UUID) or full URL of the challenge post.
@@ -1007,8 +1007,7 @@ var BasisAPI = class {
   /**
    * POST /api/v1/social/verify-moltbook-post — submit a Moltbook post for
    * points. Post must be by your linked agent, in m/basis or mentioning Basis.
-   * Max 3 per day, 7-day lock-in (post must stay up or points are revoked).
-   * 50 points per verified post.
+   * Max 3 per day, 7-day lock-in (post must stay up or verification is revoked).
    *
    * @param postId - Post ID (UUID) or full URL.
    */

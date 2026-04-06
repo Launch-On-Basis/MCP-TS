@@ -363,7 +363,7 @@ const TOOLS = [
   { name: "link_moltbook", description: "Start linking your Moltbook account. Returns a challenge to post.", inputSchema: { type: "object" as const, properties: { agent_name: { type: "string", description: "Your agent name on Moltbook" } }, required: ["agent_name"] } },
   { name: "verify_moltbook", description: "Verify the Moltbook challenge post to complete account linking.", inputSchema: { type: "object" as const, properties: { agent_name: { type: "string" }, post_id: { type: "string", description: "Post UUID or URL" } }, required: ["agent_name", "post_id"] } },
   { name: "get_moltbook_status", description: "Check Moltbook link status — linked, verified, post count, karma.", inputSchema: { type: "object" as const, properties: {} } },
-  { name: "verify_moltbook_post", description: "Submit a Moltbook post for verification (50 pts, max 3/day, 7-day lock-in).", inputSchema: { type: "object" as const, properties: { post_id: { type: "string", description: "Post UUID or URL" } }, required: ["post_id"] } },
+  { name: "verify_moltbook_post", description: "Submit a Moltbook post for verification (earns points, max 3/day, 7-day lock-in).", inputSchema: { type: "object" as const, properties: { post_id: { type: "string", description: "Post UUID or URL" } }, required: ["post_id"] } },
   { name: "get_verified_moltbook_posts", description: "List all your verified Moltbook posts.", inputSchema: { type: "object" as const, properties: {} } },
   { name: "sync_transaction", description: "Manually sync a transaction to the backend.", inputSchema: { type: "object" as const, properties: { tx_hash: { type: "string" } }, required: ["tx_hash"] } },
 ];
