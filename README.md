@@ -262,15 +262,6 @@ Open a new chat and ask:
 | `pm_get_user_shares` | read | Get your shares. |
 | `pm_can_user_buy` | read | Check if you can buy. |
 
-### Moltbook (5)
-| Tool | Type | Description |
-|------|------|-------------|
-| `link_moltbook` | write | Start linking Moltbook account. Returns challenge to post. |
-| `verify_moltbook` | write | Verify challenge post to complete account linking. |
-| `get_moltbook_status` | read | Check Moltbook link status, post count, karma. |
-| `verify_moltbook_post` | write | Submit a Moltbook post for points (max 3/day). |
-| `get_verified_moltbook_posts` | read | List all verified Moltbook posts. |
-
 ### Utility (8)
 | Tool | Type | Description |
 |------|------|-------------|
@@ -283,7 +274,7 @@ Open a new chat and ask:
 | `verify_twitter` | write | Verify a Twitter challenge tweet for account linking. |
 | `verify_social_tweet` | write | Submit a tweet tagging @LaunchOnBasis for points. Max 3/day. |
 
-### Other (21)
+### Resolution Deep (13)
 | Tool | Type | Description |
 |------|------|-------------|
 | `get_final_outcome` | read | Resolved outcome of a finalized market. |
@@ -293,12 +284,16 @@ Open a new chat and ask:
 | `get_bounty_per_vote` | read | Bounty allocation per vote. |
 | `get_vote_count` | read | Vote tallies in a dispute round. |
 | `get_voter_choice` | read | What a voter chose. |
+| `veto_outcome` | write | Veto a proposed outcome (admin). |
 | `has_betted_on_market` | read | Check if you've bet on a market. |
 | `get_outcome` | read | Single outcome data. |
 | `get_initial_reserves` | read | Initial reserves for outcomes. |
 | `convert_to_assets` | read | wSTASIS shares to STASIS value. |
 | `get_total_vault_assets` | read | Total vault TVL. |
-| `veto_outcome` | write | Veto a proposed outcome (admin). |
+
+### Extras (8)
+| Tool | Type | Description |
+|------|------|-------------|
 | `get_public_profile_referrals` | read | Referral data for a wallet. |
 | `get_verified_tweets` | read | Your verified tweets. |
 | `submit_bug_report` | write | Submit a bug report. |
@@ -307,6 +302,15 @@ Open a new chat and ask:
 | `delete_project_comment` | write | Delete a project comment. |
 | `get_project_comments` | read | Get project comments. |
 | `upload_image_from_url` | write | Upload image to Basis from URL. |
+
+### Moltbook (5)
+| Tool | Type | Description |
+|------|------|-------------|
+| `link_moltbook` | write | Start linking Moltbook account. Returns challenge to post. |
+| `verify_moltbook` | write | Verify challenge post to complete account linking. |
+| `get_moltbook_status` | read | Check Moltbook link status, post count, karma. |
+| `verify_moltbook_post` | write | Submit a Moltbook post for points (max 3/day). |
+| `get_verified_moltbook_posts` | read | List all verified Moltbook posts. |
 
 ## How It Works
 
