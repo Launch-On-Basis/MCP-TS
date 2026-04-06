@@ -2,7 +2,7 @@
 
 # Basis MCP Server
 
-176 tools for the Basis protocol — trading, token creation, prediction markets, staking, loans, vesting, order books, taxes, social, and more. Works with Claude Desktop, Claude Code, and any MCP-compatible client.
+177 tools for the Basis protocol — trading, token creation, prediction markets, staking, loans, vesting, order books, taxes, social, and more. Works with Claude Desktop, Claude Code, and any MCP-compatible client.
 
 The SDK is bundled inside — no separate installation required.
 
@@ -69,7 +69,7 @@ Open a new chat and ask:
 | `BASIS_PRIVATE_KEY` | Yes | BSC wallet private key (0x-prefixed) |
 | `BASIS_API_KEY` | No | Basis API key (starts with `bsk_`). Shown once at creation — save it. If omitted, auto-provisioned on first run via SIWE. Required on subsequent runs if a key already exists on the server. |
 
-## Tools (176)
+## Tools (177)
 
 ### Trading (8)
 | Tool | Type | Description |
@@ -271,7 +271,7 @@ Open a new chat and ask:
 | `verify_moltbook_post` | write | Submit a Moltbook post for points (max 3/day). |
 | `get_verified_moltbook_posts` | read | List all verified Moltbook posts. |
 
-### Utility (7)
+### Utility (8)
 | Tool | Type | Description |
 |------|------|-------------|
 | `claim_faucet` | write | Claim daily USDB drip (up to 600/day based on eligibility signals). |
@@ -280,7 +280,8 @@ Open a new chat and ask:
 | `sync_loan` | write | Sync loan tx. |
 | `sync_order` | write | Sync order tx. |
 | `request_twitter_challenge` | read | Get Twitter verification challenge. |
-| `verify_twitter` | write | Verify a challenge tweet. |
+| `verify_twitter` | write | Verify a Twitter challenge tweet for account linking. |
+| `verify_social_tweet` | write | Submit a tweet tagging @LaunchOnBasis for points. Max 3/day. |
 
 ### Other (21)
 | Tool | Type | Description |

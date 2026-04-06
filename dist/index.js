@@ -332,7 +332,8 @@ const TOOLS = [
     { name: "batch_create_gradual_vesting", description: "Batch create gradual vesting schedules. All share the same token, start_time, duration, time_unit, ecosystem.", inputSchema: { type: "object", properties: { beneficiaries: { type: "array", items: { type: "string" }, description: "Wallet addresses" }, token: { type: "string" }, amounts: { type: "array", items: { type: "number" }, description: "Amount per beneficiary" }, memos: { type: "array", items: { type: "string" }, description: "Memo per beneficiary" }, start_time: { type: "number" }, duration_days: { type: "number" }, time_unit: { type: "number", description: "0=Sec,1=Min,2=Hr,3=Day" }, ecosystem: { type: "string" } }, required: ["beneficiaries", "token", "amounts", "start_time", "duration_days"] } },
     { name: "batch_create_cliff_vesting", description: "Batch create cliff vestings. All share the same token, unlock_time, ecosystem.", inputSchema: { type: "object", properties: { beneficiaries: { type: "array", items: { type: "string" }, description: "Wallet addresses" }, token: { type: "string" }, amounts: { type: "array", items: { type: "number" }, description: "Amount per beneficiary" }, unlock_time: { type: "number" }, memos: { type: "array", items: { type: "string" }, description: "Memo per beneficiary" }, ecosystem: { type: "string" } }, required: ["beneficiaries", "token", "amounts", "unlock_time"] } },
     { name: "request_twitter_challenge", description: "Get a Twitter verification challenge code.", inputSchema: { type: "object", properties: {} } },
-    { name: "verify_twitter", description: "Verify a Twitter challenge tweet.", inputSchema: { type: "object", properties: { tweet_url: { type: "string" } }, required: ["tweet_url"] } },
+    { name: "verify_twitter", description: "Verify a Twitter challenge tweet for account linking.", inputSchema: { type: "object", properties: { tweet_url: { type: "string" } }, required: ["tweet_url"] } },
+    { name: "verify_social_tweet", description: "Submit a tweet tagging @LaunchOnBasis for points. Max 3/day.", inputSchema: { type: "object", properties: { tweet_url: { type: "string" } }, required: ["tweet_url"] } },
     { name: "create_project_comment", description: "Comment on a token project.", inputSchema: { type: "object", properties: { project_id: { type: "number" }, content: { type: "string" } }, required: ["project_id", "content"] } },
     { name: "delete_project_comment", description: "Delete a project comment.", inputSchema: { type: "object", properties: { comment_id: { type: "number" } }, required: ["comment_id"] } },
     { name: "get_project_comments", description: "Get comments on a project.", inputSchema: { type: "object", properties: { project_id: { type: "number" }, limit: { type: "number" } }, required: ["project_id"] } },
@@ -1260,6 +1261,9 @@ async function handleTool(name, args) {
             }
             case "verify_twitter": {
                 return ok(await client.api.verifyTwitter(args.tweet_url));
+            }
+            case "verify_social_tweet": {
+                return ok(await client.api.verifySocialTweet(args.tweet_url));
             }
             case "create_project_comment": {
                 return ok(await client.api.createComment(args.project_id, args.content, walletAddress));
