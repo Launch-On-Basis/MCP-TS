@@ -356,8 +356,15 @@ const TOOLS = [
   { name: "upload_image_from_url", description: "Upload an image from URL to Basis.", inputSchema: { type: "object" as const, properties: { image_url: { type: "string" }, contract_address: { type: "string" } }, required: ["image_url"] } },
 
   // ── Utility ────────────────────────────────────────
-  { name: "claim_faucet", description: "Claim daily USDB from faucet (up to 500/day based on eligibility signals). Requires SIWE session. Check get_faucet_status first for eligibility.", inputSchema: { type: "object" as const, properties: { referrer: { type: "string", description: "Referrer wallet address (optional)" } } } },
+  { name: "claim_faucet", description: "Claim daily USDB from faucet (up to 600/day based on eligibility signals, capped at 500 per claim). Requires SIWE session. Check get_faucet_status first.", inputSchema: { type: "object" as const, properties: { referrer: { type: "string", description: "Referrer wallet address (optional)" } } } },
   { name: "get_faucet_status", description: "Check faucet eligibility — signals, claimable amount, cooldown timer. Must be authenticated.", inputSchema: { type: "object" as const, properties: {} } },
+
+  // ── Moltbook (5) ───────────────────────────────────
+  { name: "link_moltbook", description: "Start linking your Moltbook account. Returns a challenge to post.", inputSchema: { type: "object" as const, properties: { agent_name: { type: "string", description: "Your agent name on Moltbook" } }, required: ["agent_name"] } },
+  { name: "verify_moltbook", description: "Verify the Moltbook challenge post to complete account linking.", inputSchema: { type: "object" as const, properties: { agent_name: { type: "string" }, post_id: { type: "string", description: "Post UUID or URL" } }, required: ["agent_name", "post_id"] } },
+  { name: "get_moltbook_status", description: "Check Moltbook link status — linked, verified, post count, karma.", inputSchema: { type: "object" as const, properties: {} } },
+  { name: "verify_moltbook_post", description: "Submit a Moltbook post for verification (50 pts, max 3/day, 7-day lock-in).", inputSchema: { type: "object" as const, properties: { post_id: { type: "string", description: "Post UUID or URL" } }, required: ["post_id"] } },
+  { name: "get_verified_moltbook_posts", description: "List all your verified Moltbook posts.", inputSchema: { type: "object" as const, properties: {} } },
   { name: "sync_transaction", description: "Manually sync a transaction to the backend.", inputSchema: { type: "object" as const, properties: { tx_hash: { type: "string" } }, required: ["tx_hash"] } },
 ];
 
@@ -1058,6 +1065,14 @@ async function handleTool(name: string, args: any): Promise<any> {
 
       case "claim_faucet": { return ok(await client.claimFaucet(args.referrer)); }
       case "get_faucet_status": { return ok(await client.api.getFaucetStatus()); }
+
+      // ── Moltbook ───────────────────────────────────────
+
+      case "link_moltbook": { return ok(await (client.api as any).linkMoltbook(args.agent_name)); }
+      case "verify_moltbook": { return ok(await (client.api as any).verifyMoltbook(args.agent_name, args.post_id)); }
+      case "get_moltbook_status": { return ok(await (client.api as any).getMoltbookStatus()); }
+      case "verify_moltbook_post": { return ok(await (client.api as any).verifyMoltbookPost(args.post_id)); }
+      case "get_verified_moltbook_posts": { return ok(await (client.api as any).getVerifiedMoltbookPosts()); }
       case "sync_transaction": { return ok(await client.api.syncTransaction(args.tx_hash)); }
 
       default: return err(`Unknown tool: ${name}`);

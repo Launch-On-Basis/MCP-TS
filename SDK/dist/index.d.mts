@@ -806,6 +806,76 @@ declare class BasisAPI {
         success: boolean;
         reportCount: number;
     }>;
+    /**
+     * POST /api/moltbook/link — start linking a Moltbook agent to your wallet.
+     * Returns a challenge code that the agent must post in m/basis on Moltbook.
+     */
+    linkMoltbook(moltbookName: string): Promise<{
+        challenge: string;
+        instructions: string;
+    }>;
+    /**
+     * POST /api/moltbook/verify — complete linking by providing the Moltbook
+     * post containing the challenge code. The challenge post counts as the
+     * first verified post (50 points).
+     *
+     * @param moltbookName - The Moltbook agent/username being linked.
+     * @param postId - Post ID (UUID) or full URL of the challenge post.
+     */
+    verifyMoltbook(moltbookName: string, postId: string): Promise<{
+        success: boolean;
+        moltbookName: string;
+        message: string;
+    }>;
+    /**
+     * GET /api/moltbook/status — check if your wallet has a linked Moltbook
+     * account, post count, total karma, and pending challenges.
+     */
+    getMoltbookStatus(): Promise<{
+        linked: boolean;
+        moltbookName: string | null;
+        verified: boolean;
+        postCount: number;
+        totalKarma: number;
+        pendingChallenge?: {
+            challenge: string;
+        };
+    }>;
+    /**
+     * POST /api/v1/social/verify-moltbook-post — submit a Moltbook post for
+     * points. Post must be by your linked agent, in m/basis or mentioning Basis.
+     * Max 3 per day, 7-day lock-in (post must stay up or points are revoked).
+     * 50 points per verified post.
+     *
+     * @param postId - Post ID (UUID) or full URL.
+     */
+    verifyMoltbookPost(postId: string): Promise<{
+        success: boolean;
+        post: {
+            id: string;
+            postUrl: string;
+            karma: number;
+            submolt: string;
+            mentionsBasis: boolean;
+            createdAt: string;
+        };
+    }>;
+    /**
+     * GET /api/v1/social/verified-moltbook-posts — list your submitted Moltbook
+     * posts with karma, verification status, and submission dates.
+     */
+    getVerifiedMoltbookPosts(): Promise<{
+        posts: Array<{
+            id: string;
+            postUrl: string;
+            karma: number;
+            submolt: string;
+            mentionsBasis: boolean;
+            verified: boolean;
+            lastVerifiedAt: string | null;
+            createdAt: string;
+        }>;
+    }>;
 }
 
 declare class FactoryModule {
