@@ -265,7 +265,7 @@ Open a new chat and ask:
 ### Utility (8)
 | Tool | Type | Description |
 |------|------|-------------|
-| `claim_faucet` | write | Claim daily USDB drip (up to 600/day based on eligibility signals). |
+| `claim_faucet` | write | Claim daily USDB drip (up to 500/day based on eligibility signals). |
 | `get_faucet_status` | read | Check faucet eligibility, signals, and cooldown. |
 | `sync_transaction` | write | Manually sync a tx to backend. |
 | `sync_loan` | write | Sync loan tx. |

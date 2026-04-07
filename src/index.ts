@@ -361,7 +361,7 @@ const TOOLS = [
   { name: "upload_image_from_file", description: "Upload a local image file to Basis (Pinata/IPFS). For agents/Claude Code with local file access.", inputSchema: { type: "object" as const, properties: { file_path: { type: "string", description: "Absolute path to image file" }, purpose: { type: "string", enum: ["token", "avatar"], description: "Default: 'token'" }, contract_address: { type: "string", description: "Required for purpose='token'" } }, required: ["file_path"] } },
 
   // ── Utility ────────────────────────────────────────
-  { name: "claim_faucet", description: "Claim daily USDB from faucet (up to 600/day based on eligibility signals, capped at 500 per claim). Requires SIWE session. Check get_faucet_status first.", inputSchema: { type: "object" as const, properties: { referrer: { type: "string", description: "Referrer wallet address (optional)" } } } },
+  { name: "claim_faucet", description: "Claim daily USDB from faucet (up to 500 USDB/day based on eligibility signals). Requires SIWE session. Check get_faucet_status first.", inputSchema: { type: "object" as const, properties: { referrer: { type: "string", description: "Referrer wallet address (optional)" } } } },
   { name: "get_faucet_status", description: "Check faucet eligibility — signals, claimable amount, cooldown timer. Must be authenticated.", inputSchema: { type: "object" as const, properties: {} } },
 
   // ── Moltbook (5) ───────────────────────────────────
