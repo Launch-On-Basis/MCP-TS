@@ -913,7 +913,8 @@ declare class FactoryModule {
      * @param options.hybridMultiplier - raw integer (not wei) — controls floor price rise speed
      * @param options.usdbForBonding - USDB amount in wei (18 decimals)
      * @param options.startLP - initial liquidity in wei (18 decimals)
-     * @param options.imageUrl - URL of the token image (required)
+     * @param options.imageUrl - URL of the token image (provide imageUrl or imageFile, not both)
+     * @param options.imageFile - raw image data as Buffer or Blob (alternative to imageUrl)
      */
     createTokenWithMetadata(options: {
         symbol: string;
@@ -926,7 +927,8 @@ declare class FactoryModule {
         autoVestDuration?: bigint;
         gradualAutovest?: boolean;
         description?: string;
-        imageUrl: string;
+        imageUrl?: string;
+        imageFile?: Blob | Buffer;
         website?: string;
         telegram?: string;
         twitterx?: string;
@@ -1163,7 +1165,8 @@ declare class PredictionMarketsModule {
         bonding?: bigint;
         seedAmount?: bigint;
         description?: string;
-        imageUrl: string;
+        imageUrl?: string;
+        imageFile?: Blob | Buffer;
         website?: string;
         telegram?: string;
         twitterx?: string;
@@ -1832,7 +1835,8 @@ declare class PrivateMarketsModule {
         bonding?: bigint;
         seedAmount?: bigint;
         description?: string;
-        imageUrl: string;
+        imageUrl?: string;
+        imageFile?: Blob | Buffer;
         website?: string;
         telegram?: string;
         twitterx?: string;

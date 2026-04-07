@@ -86,7 +86,7 @@ Open a new chat and ask:
 ### Token Creation (10)
 | Tool | Type | Description |
 |------|------|-------------|
-| `create_token` | write | Create a new token. Earn 20% of all trades forever. |
+| `create_token` | write | Create a new token. Earn 20% of all trades forever. Accepts image URL or local file. |
 | `unfreeze_token` | write | Open frozen token to public trading. Irreversible. |
 | `whitelist_wallets` | write | Add wallets to frozen token's whitelist. |
 | `get_token_state` | read | Get token state (frozen, supply, price). |
@@ -100,7 +100,7 @@ Open a new chat and ask:
 ### Prediction Markets (17)
 | Tool | Type | Description |
 |------|------|-------------|
-| `create_market` | write | Create a prediction market with metadata. |
+| `create_market` | write | Create a prediction market with metadata. Accepts image URL or local file. |
 | `bet` | write | Buy outcome shares. Uncapped payouts. |
 | `redeem_winnings` | write | Claim winnings from resolved market. |
 | `get_market_info` | read | Market data + outcome probabilities. |
@@ -243,7 +243,7 @@ Open a new chat and ask:
 ### Private Markets (18)
 | Tool | Type | Description |
 |------|------|-------------|
-| `pm_create_market` | write | Create private prediction market with metadata. |
+| `pm_create_market` | write | Create private prediction market with metadata. Accepts image URL or local file. |
 | `pm_buy` | write | Buy shares in private market. |
 | `pm_redeem` | write | Redeem private market winnings. |
 | `pm_list_order` | write | List sell order. |

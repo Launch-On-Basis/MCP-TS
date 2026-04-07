@@ -2895,7 +2895,8 @@ var FactoryModule = class {
    * @param options.hybridMultiplier - raw integer (not wei) — controls floor price rise speed
    * @param options.usdbForBonding - USDB amount in wei (18 decimals)
    * @param options.startLP - initial liquidity in wei (18 decimals)
-   * @param options.imageUrl - URL of the token image (required)
+   * @param options.imageUrl - URL of the token image (provide imageUrl or imageFile, not both)
+   * @param options.imageFile - raw image data as Buffer or Blob (alternative to imageUrl)
    */
   async createTokenWithMetadata(options) {
     const createResult = await this.createToken(
@@ -2922,7 +2923,15 @@ var FactoryModule = class {
     } else {
       throw new Error("Could not extract token address from creation logs.");
     }
-    const imageUrl = await this.client.api.uploadImageFromUrl(options.imageUrl, tokenAddress);
+    if (!options.imageUrl && !options.imageFile) {
+      throw new Error("Either imageUrl or imageFile is required.");
+    }
+    let imageUrl;
+    if (options.imageFile) {
+      imageUrl = await this.client.api.uploadImage(options.imageFile, `${tokenAddress}.webp`, "token", tokenAddress);
+    } else {
+      imageUrl = await this.client.api.uploadImageFromUrl(options.imageUrl, tokenAddress);
+    }
     const metadata = await this.client.api.updateMetadata({
       address: tokenAddress,
       description: options.description,
@@ -5818,7 +5827,15 @@ var PredictionMarketsModule = class {
     } else {
       throw new Error("Could not extract market address from creation logs.");
     }
-    const imageUrl = await this.client.api.uploadImageFromUrl(options.imageUrl, marketTokenAddress);
+    if (!options.imageUrl && !options.imageFile) {
+      throw new Error("Either imageUrl or imageFile is required.");
+    }
+    let imageUrl;
+    if (options.imageFile) {
+      imageUrl = await this.client.api.uploadImage(options.imageFile, `${marketTokenAddress}.webp`, "token", marketTokenAddress);
+    } else {
+      imageUrl = await this.client.api.uploadImageFromUrl(options.imageUrl, marketTokenAddress);
+    }
     const metadata = await this.client.api.updateMetadata({
       address: marketTokenAddress,
       description: options.description,
@@ -13601,7 +13618,15 @@ var PrivateMarketsModule = class {
     } else {
       throw new Error("Could not extract market address from creation logs.");
     }
-    const imageUrl = await this.client.api.uploadImageFromUrl(options.imageUrl, marketTokenAddress);
+    if (!options.imageUrl && !options.imageFile) {
+      throw new Error("Either imageUrl or imageFile is required.");
+    }
+    let imageUrl;
+    if (options.imageFile) {
+      imageUrl = await this.client.api.uploadImage(options.imageFile, `${marketTokenAddress}.webp`, "token", marketTokenAddress);
+    } else {
+      imageUrl = await this.client.api.uploadImageFromUrl(options.imageUrl, marketTokenAddress);
+    }
     const metadata = await this.client.api.updateMetadata({
       address: marketTokenAddress,
       description: options.description,

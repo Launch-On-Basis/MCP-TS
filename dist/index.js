@@ -159,7 +159,7 @@ const TOOLS = [
     { name: "close_leverage", description: "Close (or partially close) a leverage position. 10% increments.", inputSchema: { type: "object", properties: { position_id: { type: "number", description: "Leverage position ID" }, percentage: { type: "number", description: "10-100, divisible by 10 (default: 100)" } }, required: ["position_id"] } },
     { name: "get_leverage_positions", description: "List all leverage positions for the wallet.", inputSchema: { type: "object", properties: {} } },
     // ── Module 2: Token Creation (8) ───────────────────────
-    { name: "create_token", description: "Create a new token. You earn 20% of every trade forever. Stable+ = price only up, Floor+ = real movement with protection.", inputSchema: { type: "object", properties: { name: { type: "string", description: "Token full name" }, symbol: { type: "string", description: "Token ticker" }, type: { type: "string", enum: ["stable_plus", "floor_plus"], description: "Token type" }, stability: { type: "number", description: "1-90 for Floor+ (default: 50)" }, start_lp: { type: "number", description: "Starting virtual liquidity 100-10000 (default: 1000)" }, description: { type: "string" }, image_url: { type: "string" }, website: { type: "string" }, telegram: { type: "string" }, twitter: { type: "string" }, frozen: { type: "boolean", description: "Start frozen (default: false)" }, usdb_for_bonding: { type: "number", description: "USDB to seed for frozen tokens" }, auto_vest: { type: "boolean", description: "Enable auto-vesting" }, auto_vest_duration: { type: "number", description: "Auto-vest duration in seconds" } }, required: ["name", "symbol", "type"] } },
+    { name: "create_token", description: "Create a new token. You earn 20% of every trade forever. Stable+ = price only up, Floor+ = real movement with protection. Provide image_url OR image_file_path (at least one required).", inputSchema: { type: "object", properties: { name: { type: "string", description: "Token full name" }, symbol: { type: "string", description: "Token ticker" }, type: { type: "string", enum: ["stable_plus", "floor_plus"], description: "Token type" }, stability: { type: "number", description: "1-90 for Floor+ (default: 50)" }, start_lp: { type: "number", description: "Starting virtual liquidity 100-10000 (default: 1000)" }, description: { type: "string" }, image_url: { type: "string", description: "Image URL" }, image_file_path: { type: "string", description: "Local image file path (alternative to image_url)" }, website: { type: "string" }, telegram: { type: "string" }, twitter: { type: "string" }, frozen: { type: "boolean", description: "Start frozen (default: false)" }, usdb_for_bonding: { type: "number", description: "USDB to seed for frozen tokens" }, auto_vest: { type: "boolean", description: "Enable auto-vesting" }, auto_vest_duration: { type: "number", description: "Auto-vest duration in seconds" } }, required: ["name", "symbol", "type"] } },
     { name: "unfreeze_token", description: "Open frozen token to public trading. Irreversible.", inputSchema: { type: "object", properties: { token: { type: "string", description: "Token address" } }, required: ["token"] } },
     { name: "whitelist_wallets", description: "Add wallets to frozen token's whitelist.", inputSchema: { type: "object", properties: { token: { type: "string", description: "Token address" }, wallets: { type: "array", items: { type: "string" }, description: "Wallet addresses" }, max_buy_usdb: { type: "number", description: "Max USDB per wallet" }, tag: { type: "string" } }, required: ["token", "wallets", "max_buy_usdb"] } },
     { name: "get_token_state", description: "Get token state — frozen, bonded, supply, price.", inputSchema: { type: "object", properties: { token: { type: "string", description: "Token name or address" } }, required: ["token"] } },
@@ -170,7 +170,7 @@ const TOOLS = [
     { name: "get_fee_amount", description: "Get the factory token creation fee.", inputSchema: { type: "object", properties: {} } },
     { name: "get_floor_price", description: "Get the USDB floor price for a factory token. Does NOT work on STASIS — only factory-created tokens.", inputSchema: { type: "object", properties: { token: { type: "string", description: "Factory token address (not STASIS)" } }, required: ["token"] } },
     // ── Module 3: Prediction Markets (12+) ─────────────────
-    { name: "create_market", description: "Create prediction market. Earn 20% of net trading fees forever.", inputSchema: { type: "object", properties: { question: { type: "string", description: "Market question" }, symbol: { type: "string", description: "Market token symbol" }, outcomes: { type: "array", items: { type: "string" }, description: "e.g. ['Yes', 'No']" }, end_time: { type: "string", description: "ISO date or unix timestamp" }, seed_usdb: { type: "number", description: "USDB seed (min 50, default: 50)" }, description: { type: "string" }, image_url: { type: "string" } }, required: ["question", "symbol", "outcomes", "end_time"] } },
+    { name: "create_market", description: "Create prediction market. Earn 20% of net trading fees forever. Provide image_url OR image_file_path.", inputSchema: { type: "object", properties: { question: { type: "string", description: "Market question" }, symbol: { type: "string", description: "Market token symbol" }, outcomes: { type: "array", items: { type: "string" }, description: "e.g. ['Yes', 'No']" }, end_time: { type: "string", description: "ISO date or unix timestamp" }, seed_usdb: { type: "number", description: "USDB seed (min 50, default: 50)" }, description: { type: "string" }, image_url: { type: "string" }, image_file_path: { type: "string", description: "Local image file path (alternative to image_url)" } }, required: ["question", "symbol", "outcomes", "end_time"] } },
     { name: "bet", description: "Buy shares in a prediction market outcome. UNCAPPED payouts — winners split entire losing pool + general pot, NOT $1/share. Before betting: 1) get_my_shares for existing position 2) estimate_shares_out for new shares 3) get_potential_payout(TOTAL shares = existing + new, usdb=bet_amount) → payout_if_win is your TOTAL payout. Profit = payout_if_win - total_invested.", inputSchema: { type: "object", properties: { market: { type: "string", description: "Market token address" }, outcome: { type: "string", description: "Outcome name or index" }, amount_usdb: { type: "number", description: "USDB to bet" } }, required: ["market", "outcome", "amount_usdb"] } },
     { name: "redeem_winnings", description: "Claim winnings from resolved market.", inputSchema: { type: "object", properties: { market: { type: "string", description: "Market token address" } }, required: ["market"] } },
     { name: "get_market_info", description: "Get market data + outcome probabilities.", inputSchema: { type: "object", properties: { market: { type: "string", description: "Market token address" } }, required: ["market"] } },
@@ -308,7 +308,7 @@ const TOOLS = [
     { name: "sync_loan", description: "Sync a loan transaction.", inputSchema: { type: "object", properties: { tx_hash: { type: "string" } }, required: ["tx_hash"] } },
     { name: "sync_order", description: "Sync an order book transaction.", inputSchema: { type: "object", properties: { tx_hash: { type: "string" } }, required: ["tx_hash"] } },
     // ── Module 13: Private Markets ──────────────────────
-    { name: "pm_create_market", description: "Create a private prediction market with metadata.", inputSchema: { type: "object", properties: { name: { type: "string" }, symbol: { type: "string" }, outcomes: { type: "array", items: { type: "string" } }, end_time: { type: "string" }, private_event: { type: "boolean", description: "Default: true" }, frozen: { type: "boolean" }, seed_usdb: { type: "number" }, description: { type: "string" }, image_url: { type: "string" }, website: { type: "string" }, telegram: { type: "string" }, twitter: { type: "string" } }, required: ["name", "symbol", "outcomes", "end_time"] } },
+    { name: "pm_create_market", description: "Create a private prediction market with metadata. Provide image_url OR image_file_path.", inputSchema: { type: "object", properties: { name: { type: "string" }, symbol: { type: "string" }, outcomes: { type: "array", items: { type: "string" } }, end_time: { type: "string" }, private_event: { type: "boolean", description: "Default: true" }, frozen: { type: "boolean" }, seed_usdb: { type: "number" }, description: { type: "string" }, image_url: { type: "string" }, image_file_path: { type: "string", description: "Local image file path (alternative to image_url)" }, website: { type: "string" }, telegram: { type: "string" }, twitter: { type: "string" } }, required: ["name", "symbol", "outcomes", "end_time"] } },
     { name: "pm_buy", description: "Buy shares in a private market outcome.", inputSchema: { type: "object", properties: { market: { type: "string" }, outcome: { type: "number" }, amount_usdb: { type: "number" } }, required: ["market", "outcome", "amount_usdb"] } },
     { name: "pm_redeem", description: "Redeem winnings from a private market.", inputSchema: { type: "object", properties: { market: { type: "string" } }, required: ["market"] } },
     { name: "pm_list_order", description: "List sell order on private market.", inputSchema: { type: "object", properties: { market: { type: "string" }, outcome: { type: "number" }, amount: { type: "number" }, price_per_share: { type: "number" } }, required: ["market", "outcome", "amount", "price_per_share"] } },
@@ -452,13 +452,14 @@ async function handleTool(name, args) {
             // ── Module 2: Token Creation ────────────────────────
             case "create_token": {
                 const hybridMultiplier = args.type === "stable_plus" ? 100n : BigInt(args.stability || 50);
+                const imageFile = args.image_file_path ? (0, fs_1.readFileSync)(args.image_file_path) : undefined;
                 const tx = await client.factory.createTokenWithMetadata({
                     name: args.name, symbol: args.symbol, hybridMultiplier,
                     startLP: BigInt(args.start_lp || 1000),
                     frozen: args.frozen || false,
                     usdbForBonding: args.usdb_for_bonding ? toRaw(args.usdb_for_bonding) : undefined,
                     autoVest: args.auto_vest, autoVestDuration: args.auto_vest_duration ? BigInt(args.auto_vest_duration) : undefined,
-                    description: args.description || "", imageUrl: args.image_url, website: args.website, telegram: args.telegram, twitterx: args.twitter,
+                    description: args.description || "", imageUrl: args.image_url, imageFile, website: args.website, telegram: args.telegram, twitterx: args.twitter,
                 });
                 return ok({ hash: tx.hash, status: tx.receipt?.status, token_address: tx.tokenAddress, image_url: tx.imageUrl });
             }
@@ -529,10 +530,11 @@ async function handleTool(name, args) {
             // ── Module 3: Prediction Markets ────────────────────
             case "create_market": {
                 const endTime = BigInt(typeof args.end_time === "string" && isNaN(Number(args.end_time)) ? Math.floor(new Date(args.end_time).getTime() / 1000) : Number(args.end_time));
+                const imageFile = args.image_file_path ? (0, fs_1.readFileSync)(args.image_file_path) : undefined;
                 const tx = await client.predictionMarkets.createMarketWithMetadata({
                     marketName: args.question, symbol: args.symbol, optionNames: args.outcomes, endTime,
                     maintoken: client.mainTokenAddress, frozen: false, seedAmount: toRaw(args.seed_usdb || 50),
-                    description: args.description || "", imageUrl: args.image_url,
+                    description: args.description || "", imageUrl: args.image_url, imageFile,
                 });
                 return ok({ hash: tx.hash, status: tx.receipt?.status, market_token_address: tx.marketTokenAddress, outcomes: args.outcomes });
             }
@@ -1164,11 +1166,12 @@ async function handleTool(name, args) {
             // ── Module 13: Private Markets ──────────────────────
             case "pm_create_market": {
                 const endTime = BigInt(typeof args.end_time === "string" && isNaN(Number(args.end_time)) ? Math.floor(new Date(args.end_time).getTime() / 1000) : Number(args.end_time));
+                const imageFile = args.image_file_path ? (0, fs_1.readFileSync)(args.image_file_path) : undefined;
                 const tx = await client.privateMarkets.createMarketWithMetadata({
                     marketName: args.name, symbol: args.symbol, endTime, optionNames: args.outcomes,
                     maintoken: client.mainTokenAddress, privateEvent: args.private_event !== false,
                     frozen: args.frozen || false, seedAmount: toRaw(args.seed_usdb || 50),
-                    description: args.description || "", imageUrl: args.image_url,
+                    description: args.description || "", imageUrl: args.image_url, imageFile,
                     website: args.website, telegram: args.telegram, twitterx: args.twitter,
                 });
                 return ok({ hash: tx.hash, status: tx.receipt?.status, market_token_address: tx.marketTokenAddress, image_url: tx.imageUrl });
