@@ -2,7 +2,7 @@
 
 # Basis MCP Server
 
-177 tools for the Basis protocol — trading, token creation, prediction markets, staking, loans, vesting, order books, taxes, social, and more. Works with Claude Desktop, Claude Code, and any MCP-compatible client.
+178 tools for the Basis protocol — trading, token creation, prediction markets, staking, loans, vesting, order books, taxes, social, and more. Works with Claude Desktop, Claude Code, and any MCP-compatible client.
 
 The SDK is bundled inside — no separate installation required.
 
@@ -69,7 +69,7 @@ Open a new chat and ask:
 | `BASIS_PRIVATE_KEY` | Yes | BSC wallet private key (0x-prefixed) |
 | `BASIS_API_KEY` | No | Basis API key (starts with `bsk_`). Shown once at creation — save it. If omitted, auto-provisioned on first run via SIWE. Required on subsequent runs if a key already exists on the server. |
 
-## Tools (177)
+## Tools (178)
 
 ### Trading (8)
 | Tool | Type | Description |
@@ -163,7 +163,7 @@ Open a new chat and ask:
 | `get_market_events` | read | Prediction market event history. |
 | `get_market_liquidity` | read | Market liquidity data. |
 | `remove_whitelist` | write | Remove wallet from whitelist. |
-| `update_my_profile` | write | Update username or social links. |
+| `update_my_profile` | write | Update username, avatar, or social links. |
 
 ### Agent Identity (8)
 | Tool | Type | Description |
@@ -291,7 +291,7 @@ Open a new chat and ask:
 | `convert_to_assets` | read | wSTASIS shares to STASIS value. |
 | `get_total_vault_assets` | read | Total vault TVL. |
 
-### Extras (8)
+### Extras (9)
 | Tool | Type | Description |
 |------|------|-------------|
 | `get_public_profile_referrals` | read | Referral data for a wallet. |
@@ -301,7 +301,8 @@ Open a new chat and ask:
 | `create_project_comment` | write | Comment on a project. |
 | `delete_project_comment` | write | Delete a project comment. |
 | `get_project_comments` | read | Get project comments. |
-| `upload_image_from_url` | write | Upload image to Basis from URL. |
+| `upload_image_from_url` | write | Upload image to Basis from URL (token or avatar purpose). |
+| `set_avatar` | write | Upload image and set as profile avatar in one step. |
 
 ### Moltbook (5)
 | Tool | Type | Description |

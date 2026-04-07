@@ -192,6 +192,7 @@ interface UpdateProfilePayload {
     };
     removeSocial?: string;
     toggleSocialPublic?: string;
+    avatar?: string | null;
 }
 interface UpdateProfileResult {
     success: boolean;
@@ -255,15 +256,18 @@ declare class BasisAPI {
      * POST /api/images — upload an image file.
      *
      * Accepts Blob, Buffer, or a File-like object. Returns the hosted URL string.
+     *
+     * @param purpose - "token" (requires address) or "avatar"
+     * @param address - token/market contract address (required when purpose is "token")
      */
-    uploadImage(file: Blob | Buffer, filename?: string): Promise<string>;
+    uploadImage(file: Blob | Buffer, filename?: string, purpose?: 'token' | 'avatar', address?: string): Promise<string>;
     /**
      * Downloads an image from a URL, resizes it to 512x512 (center-crop),
      * converts to WebP, and uploads it to IPFS via /api/images.
      *
      * Returns the hosted IPFS URL string.
      */
-    uploadImageFromUrl(imageUrl: string, contractAddress?: string): Promise<string>;
+    uploadImageFromUrl(imageUrl: string, contractAddress?: string, purpose?: 'token' | 'avatar'): Promise<string>;
     /**
      * POST /api/metadata — publish or update project metadata.
      * Requires session and the caller must be the token creator.
@@ -300,6 +304,7 @@ declare class BasisAPI {
     getTokens(options?: {
         search?: string;
         isPrediction?: boolean;
+        dev?: string;
         sort?: string;
         page?: number;
         limit?: number;
@@ -698,8 +703,16 @@ declare class BasisAPI {
      * - `{ social: { platform, handle } }` — link a social account
      * - `{ removeSocial: platform }` — unlink a social account
      * - `{ toggleSocialPublic: platform }` — flip public/private on a social
+     * - `{ avatar: url }` — set avatar (must be HTTPS URL)
+     * - `{ avatar: null }` — clear avatar
      */
     updateMyProfile(payload: UpdateProfilePayload): Promise<UpdateProfileResult>;
+    /**
+     * Upload an avatar image and set it on the profile in one call.
+     * Accepts a raw file (Blob/Buffer) or an image URL to download and resize.
+     * Returns the hosted avatar URL.
+     */
+    setAvatar(source: string | Blob | Buffer, filename?: string): Promise<string>;
     /**
      * GET /api/v1/me/referrals — referral overview for the authenticated user.
      * Returns who referred you, your tier rate, and direct + indirect referrals
@@ -896,6 +909,11 @@ declare class FactoryModule {
      * 4. Creates metadata on IPFS (name, symbol, description auto-read from chain)
      *
      * Returns { hash, receipt, tokenAddress, imageUrl, metadata }
+     *
+     * @param options.hybridMultiplier - raw integer (not wei) — controls floor price rise speed
+     * @param options.usdbForBonding - USDB amount in wei (18 decimals)
+     * @param options.startLP - initial liquidity in wei (18 decimals)
+     * @param options.imageUrl - URL of the token image (required)
      */
     createTokenWithMetadata(options: {
         symbol: string;
@@ -923,6 +941,9 @@ declare class FactoryModule {
         };
     }>;
     disableFreeze(tokenAddress: Address): Promise<viem.TransactionReceipt>;
+    /**
+     * @param amount - token amount in wei (18 decimals)
+     */
     setWhitelistedWallet(tokenAddress: Address, wallets: Address[], amount: bigint, tag: string): Promise<viem.TransactionReceipt>;
     getTokenState(tokenAddress: Address): Promise<{
         frozen: boolean;
@@ -977,6 +998,10 @@ declare class TradingModule {
     /**
      * Buys tokens during the bonding curve phase.
      * Calls buyTokens on SWAP.sol.
+     * @param amount — input token amount in wei (18 decimals)
+     * @param minOut — minimum output amount in wei (18 decimals)
+     * @param path — ordered list of token addresses for the swap route
+     * @param wrapTokens — whether to wrap output tokens
      */
     buyBondingTokens(amount: bigint, minOut: bigint, path: Address[], wrapTokens: boolean): Promise<{
         hash: `0x${string}`;
@@ -985,6 +1010,10 @@ declare class TradingModule {
     /**
      * Sells tokens during the bonding curve phase.
      * Calls sellTokens on SWAP.sol.
+     * @param amount — token amount to sell in wei (18 decimals)
+     * @param minOut — minimum output amount in wei (18 decimals)
+     * @param path — ordered list of token addresses for the swap route
+     * @param swapToETH — whether to unwrap output to native ETH
      */
     sellBondingTokens(amount: bigint, minOut: bigint, path: Address[], swapToETH: boolean): Promise<{
         hash: `0x${string}`;
@@ -992,6 +1021,10 @@ declare class TradingModule {
     }>;
     /**
      * General buy tokens function.
+     * @param amount — input token amount in wei (18 decimals)
+     * @param minOut — minimum output amount in wei (18 decimals)
+     * @param path — ordered list of token addresses for the swap route
+     * @param wrapTokens — whether to wrap output tokens
      */
     buyTokens(amount: bigint, minOut: bigint, path: Address[], wrapTokens: boolean): Promise<{
         hash: `0x${string}`;
@@ -999,6 +1032,10 @@ declare class TradingModule {
     }>;
     /**
      * General sell tokens function.
+     * @param amount — token amount to sell in wei (18 decimals)
+     * @param minOut — minimum output amount in wei (18 decimals)
+     * @param path — ordered list of token addresses for the swap route
+     * @param swapToETH — whether to unwrap output to native ETH
      */
     sellTokens(amount: bigint, minOut: bigint, path: Address[], swapToETH: boolean): Promise<{
         hash: `0x${string}`;
@@ -1007,6 +1044,10 @@ declare class TradingModule {
     /**
      * Simplified buy: purchases the target token using USDB.
      * Automatically builds the correct swap path.
+     * @param tokenAddress — address of the token to buy
+     * @param usdbAmount — USDB amount in wei (18 decimals)
+     * @param minOut — minimum output amount in wei (18 decimals)
+     * @param wrapTokens — whether to wrap output tokens
      */
     buy(tokenAddress: Address, usdbAmount: bigint, minOut?: bigint, wrapTokens?: boolean): Promise<{
         hash: `0x${string}`;
@@ -1016,6 +1057,11 @@ declare class TradingModule {
      * Simplified sell: sells a token.
      * For factory tokens, set toUsdb=true to swap all the way to USDB (3-hop),
      * or false to stop at MAINTOKEN (2-hop). Ignored when selling MAINTOKEN.
+     * @param tokenAddress — address of the token to sell
+     * @param amount — token amount to sell in wei (18 decimals)
+     * @param toUsdb — whether to swap all the way to USDB
+     * @param minOut — minimum output amount in wei (18 decimals)
+     * @param swapToETH — whether to unwrap output to native ETH
      */
     sell(tokenAddress: Address, amount: bigint, toUsdb?: boolean, minOut?: bigint, swapToETH?: boolean): Promise<{
         hash: `0x${string}`;
@@ -1025,6 +1071,10 @@ declare class TradingModule {
     private buildSellPath;
     /**
      * Leveraged buy: purchases tokens with leverage (creates a loan position).
+     * @param amount — USDB collateral amount in wei (18 decimals)
+     * @param minOut — minimum output amount in wei (18 decimals)
+     * @param path — ordered list of token addresses for the swap route
+     * @param numberOfDays — loan duration in days, integer, minimum 10
      */
     leverageBuy(amount: bigint, minOut: bigint, path: Address[], numberOfDays: bigint): Promise<{
         hash: `0x${string}`;
@@ -1033,6 +1083,10 @@ declare class TradingModule {
     /**
      * Partially sells collateral from a loan/leverage position.
      * percentage must be divisible by 10 (10-100).
+     * @param loanId — ID of the loan/leverage position
+     * @param percentage — integer 10-100, divisible by 10
+     * @param isLeverage — true if leverage position, false if loan
+     * @param minOut — minimum output amount in wei (18 decimals)
      */
     partialLoanSell(loanId: bigint, percentage: bigint, isLeverage: boolean, minOut: bigint): Promise<{
         hash: `0x${string}`;
@@ -1040,7 +1094,11 @@ declare class TradingModule {
     }>;
     /**
      * Sells a percentage of the user's token balance.
-     * percentage: 1-100
+     * @param tokenAddress — address of the token to sell
+     * @param percentage — integer 1-100
+     * @param toUsdb — whether to swap all the way to USDB
+     * @param minOut — minimum output amount in wei (18 decimals)
+     * @param swapToETH — whether to unwrap output to native ETH
      */
     sellPercentage(tokenAddress: Address, percentage: number, toUsdb?: boolean, minOut?: bigint, swapToETH?: boolean): Promise<{
         hash: `0x${string}`;
@@ -1067,6 +1125,8 @@ declare class TradingModule {
     getUSDPrice(tokenAddress: Address): Promise<string>;
     /**
      * Returns the expected output amounts for a given input amount and swap path.
+     * @param amount — input token amount in wei (18 decimals)
+     * @param path — ordered list of token addresses for the swap route
      */
     getAmountsOut(amount: bigint, path: Address[]): Promise<bigint>;
 }
@@ -1089,6 +1149,9 @@ declare class PredictionMarketsModule {
      * Requires SIWE authentication.
      *
      * Returns { hash, receipt, marketTokenAddress, imageUrl, metadata }
+     * @param options.endTime - Unix timestamp in seconds
+     * @param options.bonding - USDB amount in wei (18 decimals)
+     * @param options.seedAmount - USDB amount in wei (18 decimals)
      */
     createMarketWithMetadata(options: {
         marketName: string;
@@ -1116,6 +1179,12 @@ declare class PredictionMarketsModule {
     }>;
     /**
      * Executes an AMM buy for a prediction outcome.
+     * @param marketToken - market token address
+     * @param outcomeId - outcome index
+     * @param inputToken - input token address
+     * @param inputAmount - input token amount in wei (18 decimals)
+     * @param minUsdb - minimum USDB in wei (18 decimals)
+     * @param minShares - minimum shares in wei (18 decimals)
      */
     buy(marketToken: Address, outcomeId: number, inputToken: Address, inputAmount: bigint, minUsdb: bigint, minShares: bigint): Promise<{
         hash: `0x${string}`;
@@ -1152,7 +1221,15 @@ declare class PredictionMarketsModule {
     hasBettedOnMarket(marketToken: Address, user: Address): Promise<boolean>;
     getBountyPool(marketToken: Address): Promise<bigint>;
     getGeneralPot(marketToken: Address): Promise<bigint>;
+    /**
+     * @param usdbAmount - USDB amount in wei (18 decimals)
+     */
     getBuyOrderAmountsOut(marketToken: Address, orderId: bigint, usdbAmount: bigint): Promise<unknown>;
+    /**
+     * Buys from order book and AMM in a single transaction.
+     * @param totalInput - input token amount in wei (18 decimals)
+     * @param minShares - minimum shares in wei (18 decimals)
+     */
     buyOrdersAndContract(marketToken: Address, outcomeId: number, orderIds: bigint[], inputToken: Address, totalInput: bigint, minShares: bigint): Promise<{
         hash: `0x${string}`;
         receipt: viem.TransactionReceipt;
@@ -1166,6 +1243,8 @@ declare class OrderBookModule {
     private approveUsdbIfNeeded;
     /**
      * Creates a limit order.
+     * @param amount - shares in wei (18 decimals)
+     * @param pricePerShare - USDB per share in wei (18 decimals)
      */
     listOrder(marketToken: Address, outcomeId: number, amount: bigint, pricePerShare: bigint): Promise<{
         hash: `0x${string}`;
@@ -1180,6 +1259,7 @@ declare class OrderBookModule {
     }>;
     /**
      * Executes against a specific order.
+     * @param fill - shares to fill in wei (18 decimals)
      */
     buyOrder(marketToken: Address, orderId: bigint, fill: bigint): Promise<{
         hash: `0x${string}`;
@@ -1187,6 +1267,7 @@ declare class OrderBookModule {
     }>;
     /**
      * Sweeps multiple orders.
+     * @param usdbAmount - USDB amount in wei (18 decimals)
      */
     buyMultipleOrders(marketToken: Address, orderIds: bigint[], usdbAmount: bigint): Promise<{
         hash: `0x${string}`;
@@ -1199,10 +1280,12 @@ declare class OrderBookModule {
     private syncOrder;
     /**
      * Retrieves exact cost including taxes before buying.
+     * @param fill - shares to fill in wei (18 decimals)
      */
     getBuyOrderCost(marketToken: Address, orderId: bigint, fill: bigint): Promise<unknown>;
     /**
      * Preview how many shares can be bought for a given USDB amount on a P2P order.
+     * @param usdbAmount - USDB amount in wei (18 decimals)
      */
     getBuyOrderAmountsOut(marketToken: Address, orderId: bigint, usdbAmount: bigint): Promise<unknown>;
 }
@@ -1215,6 +1298,10 @@ declare class LoansModule {
     private approveIfNeeded;
     /**
      * Takes a loan. Auto-approves the collateral token to the LoanHub.
+     * @param ecosystem - ecosystem contract address
+     * @param collateral - collateral token address
+     * @param amount - collateral amount in wei (18 decimals)
+     * @param daysCount - integer, minimum 10
      */
     takeLoan(ecosystem: Address, collateral: Address, amount: bigint, daysCount: bigint): Promise<{
         hash: `0x${string}`;
@@ -1231,6 +1318,10 @@ declare class LoansModule {
     /**
      * Prolongs duration of a loan.
      * When payInStable is true, auto-approves USDB to the LoanHub.
+     * @param hubId - loan hub identifier
+     * @param addDays - integer, minimum 10
+     * @param payInStable - whether to pay extension fee in USDB
+     * @param refinance - whether to refinance the loan
      */
     extendLoan(hubId: bigint, addDays: bigint, payInStable: boolean, refinance: boolean): Promise<{
         hash: `0x${string}`;
@@ -1250,6 +1341,8 @@ declare class LoansModule {
     /**
      * Increases collateral on an existing loan.
      * Reads loan details to find the collateral token, then auto-approves it.
+     * @param hubId - loan hub identifier
+     * @param amountToAdd - additional collateral in wei (18 decimals)
      */
     increaseLoan(hubId: bigint, amountToAdd: bigint): Promise<{
         hash: `0x${string}`;
@@ -1260,6 +1353,10 @@ declare class LoansModule {
      */
     /**
      * Partially sell collateral from a hub loan position.
+     * @param hubId - loan hub identifier
+     * @param percentage - integer 10-100, divisible by 10
+     * @param isLeverage - whether this is a leverage position
+     * @param minOut - minimum output in wei (18 decimals)
      */
     hubPartialLoanSell(hubId: bigint, percentage: bigint, isLeverage: boolean, minOut: bigint): Promise<{
         hash: `0x${string}`;
@@ -1278,6 +1375,11 @@ declare class VestingModule {
     /**
      * Creates a gradual vesting schedule.
      * Auto-approves the token to the vesting contract and attaches the creation fee.
+     *
+     * @param totalAmount - token amount in wei (18 decimals)
+     * @param startTime - Unix timestamp in seconds
+     * @param durationInDays - integer, number of days
+     * @param timeUnit - enum: 0=Second, 1=Minute, 2=Hour, 3=Day
      */
     createGradualVesting(beneficiary: Address, token: Address, totalAmount: bigint, startTime: bigint, durationInDays: bigint, timeUnit: number, memo: string, ecosystem: Address): Promise<{
         hash: `0x${string}`;
@@ -1285,6 +1387,9 @@ declare class VestingModule {
     }>;
     /**
      * Creates a cliff vesting schedule.
+     *
+     * @param totalAmount - token amount in wei (18 decimals)
+     * @param unlockTime - Unix timestamp in seconds
      */
     createCliffVesting(beneficiary: Address, token: Address, totalAmount: bigint, unlockTime: bigint, memo: string, ecosystem: Address): Promise<{
         hash: `0x${string}`;
@@ -1323,6 +1428,11 @@ declare class VestingModule {
     /**
      * Creates gradual vesting schedules for multiple beneficiaries in a single transaction.
      * Auto-approves the sum of all amounts and attaches the creation fee.
+     *
+     * @param totalAmounts - token amounts in wei (18 decimals)
+     * @param startTime - Unix timestamp in seconds
+     * @param durationInDays - integer, number of days
+     * @param timeUnit - enum: 0=Second, 1=Minute, 2=Hour, 3=Day
      */
     batchCreateGradualVesting(beneficiaries: Address[], token: Address, totalAmounts: bigint[], userMemos: string[], startTime: bigint, durationInDays: bigint, timeUnit: number, ecosystem: Address): Promise<{
         hash: `0x${string}`;
@@ -1331,6 +1441,9 @@ declare class VestingModule {
     /**
      * Creates cliff vesting schedules for multiple beneficiaries in a single transaction.
      * Auto-approves the sum of all amounts and attaches the creation fee.
+     *
+     * @param totalAmounts - token amounts in wei (18 decimals)
+     * @param unlockTime - Unix timestamp in seconds
      */
     batchCreateCliffVesting(beneficiaries: Address[], token: Address, totalAmounts: bigint[], unlockTime: bigint, userMemos: string[], ecosystem: Address): Promise<{
         hash: `0x${string}`;
@@ -1345,6 +1458,8 @@ declare class VestingModule {
     }>;
     /**
      * Extends the vesting period by additional days.
+     *
+     * @param additionalDays - integer, number of days
      */
     extendVestingPeriod(vestingId: bigint, additionalDays: bigint): Promise<{
         hash: `0x${string}`;
@@ -1353,6 +1468,8 @@ declare class VestingModule {
     /**
      * Adds more tokens to an existing vesting schedule.
      * Auto-approves the token to the vesting contract.
+     *
+     * @param additionalAmount - token amount in wei (18 decimals)
      */
     addTokensToVesting(vestingId: bigint, additionalAmount: bigint): Promise<{
         hash: `0x${string}`;
@@ -1379,6 +1496,9 @@ declare class VestingModule {
     getActiveLoan(vestingId: bigint): Promise<bigint>;
     /**
      * Returns vesting IDs for a given token within a specified index range.
+     *
+     * @param startIndex - array index
+     * @param endIndex - array index
      */
     getTokenVestingIds(token: Address, startIndex: bigint, endIndex: bigint): Promise<bigint[]>;
     /**
@@ -1404,6 +1524,7 @@ declare class StakingModule {
     /**
      * Wraps STASIS (MAINTOKEN) into wSTASIS.
      * Approves the staking contract to spend MAINTOKEN if needed.
+     * @param amount - STASIS amount in wei (18 decimals)
      */
     buy(amount: bigint): Promise<{
         hash: `0x${string}`;
@@ -1411,6 +1532,9 @@ declare class StakingModule {
     }>;
     /**
      * Unwraps wSTASIS back to STASIS, optionally converting to USDB.
+     * @param shares - wSTASIS shares in wei (18 decimals)
+     * @param claimUSDB - whether to convert to USDB
+     * @param minUSDB - minimum USDB output in wei (18 decimals)
      */
     sell(shares: bigint, claimUSDB?: boolean, minUSDB?: bigint): Promise<{
         hash: `0x${string}`;
@@ -1418,6 +1542,7 @@ declare class StakingModule {
     }>;
     /**
      * Locks wSTASIS as collateral for borrowing.
+     * @param shares - wSTASIS shares in wei (18 decimals)
      */
     lock(shares: bigint): Promise<{
         hash: `0x${string}`;
@@ -1425,6 +1550,7 @@ declare class StakingModule {
     }>;
     /**
      * Unlocks wSTASIS collateral.
+     * @param shares - wSTASIS shares in wei (18 decimals)
      */
     unlock(shares: bigint): Promise<{
         hash: `0x${string}`;
@@ -1433,6 +1559,8 @@ declare class StakingModule {
     /**
      * Pledges STASIS as collateral and borrows USDB against it.
      * The stasisAmountToBorrow parameter is the STASIS amount to pledge — USDB received is collateral value minus fees.
+     * @param stasisAmountToBorrow - STASIS collateral amount in wei (18 decimals)
+     * @param days - integer, minimum 10
      */
     borrow(stasisAmountToBorrow: bigint, days: bigint): Promise<{
         hash: `0x${string}`;
@@ -1447,6 +1575,9 @@ declare class StakingModule {
     }>;
     /**
      * Extends the active staking loan.
+     * @param daysToAdd - integer, minimum 10
+     * @param payInUSDB - whether to pay extension fee in USDB
+     * @param refinance - whether to refinance the loan
      */
     extendLoan(daysToAdd: bigint, payInUSDB: boolean, refinance: boolean): Promise<{
         hash: `0x${string}`;
@@ -1463,10 +1594,12 @@ declare class StakingModule {
     getAvailableStasis(user: Address): Promise<bigint>;
     /**
      * Converts STASIS amount to wSTASIS shares.
+     * @param assets - STASIS amount in wei (18 decimals)
      */
     convertToShares(assets: bigint): Promise<bigint>;
     /**
      * Converts wSTASIS shares to STASIS amount.
+     * @param shares - wSTASIS shares in wei (18 decimals)
      */
     convertToAssets(shares: bigint): Promise<bigint>;
     /**
@@ -1475,6 +1608,7 @@ declare class StakingModule {
     totalAssets(): Promise<bigint>;
     /**
      * Borrows additional STASIS against locked wSTASIS collateral on an existing loan.
+     * @param additionalStasisToBorrow - STASIS collateral amount in wei (18 decimals)
      */
     addToLoan(additionalStasisToBorrow: bigint): Promise<{
         hash: `0x${string}`;
@@ -1498,6 +1632,8 @@ declare class MarketResolverModule {
     /**
      * Proposes an outcome for a market.
      * Auto-approves USDB to the resolver for the PROPOSAL_BOND amount.
+     * @param marketToken - prediction market token address
+     * @param outcomeId - outcome index
      */
     proposeOutcome(marketToken: Address, outcomeId: number): Promise<{
         hash: `0x${string}`;
@@ -1506,6 +1642,8 @@ declare class MarketResolverModule {
     /**
      * Disputes a proposed outcome.
      * Auto-approves USDB to the resolver for the PROPOSAL_BOND amount.
+     * @param marketToken - prediction market token address
+     * @param newOutcomeId - proposed alternative outcome index
      */
     dispute(marketToken: Address, newOutcomeId: number): Promise<{
         hash: `0x${string}`;
@@ -1513,6 +1651,8 @@ declare class MarketResolverModule {
     }>;
     /**
      * Casts a vote on a disputed market outcome.
+     * @param marketToken - prediction market token address
+     * @param outcomeId - outcome index to vote for
      */
     vote(marketToken: Address, outcomeId: number): Promise<{
         hash: `0x${string}`;
@@ -1521,6 +1661,7 @@ declare class MarketResolverModule {
     /**
      * Stakes tokens to become a resolver voter.
      * Auto-approves the token to the resolver for MIN_STAKE_AMOUNT.
+     * @param token - token contract address to stake
      */
     stake(token: Address): Promise<{
         hash: `0x${string}`;
@@ -1528,6 +1669,7 @@ declare class MarketResolverModule {
     }>;
     /**
      * Unstakes tokens, removing resolver voter status.
+     * @param token - token contract address to unstake
      */
     unstake(token: Address): Promise<{
         hash: `0x${string}`;
@@ -1535,6 +1677,7 @@ declare class MarketResolverModule {
     }>;
     /**
      * Finalizes an uncontested market (proposal period expired without dispute).
+     * @param marketToken - prediction market token address
      */
     finalizeUncontested(marketToken: Address): Promise<{
         hash: `0x${string}`;
@@ -1542,6 +1685,7 @@ declare class MarketResolverModule {
     }>;
     /**
      * Finalizes a disputed market after the dispute period.
+     * @param marketToken - prediction market token address
      */
     finalizeMarket(marketToken: Address): Promise<{
         hash: `0x${string}`;
@@ -1550,6 +1694,8 @@ declare class MarketResolverModule {
     /**
      * Vetoes a proposed outcome.
      * Auto-approves USDB to the resolver for the PROPOSAL_BOND amount.
+     * @param marketToken - prediction market token address
+     * @param proposedOutcome - outcome index being vetoed
      */
     veto(marketToken: Address, proposedOutcome: number): Promise<{
         hash: `0x${string}`;
@@ -1557,6 +1703,7 @@ declare class MarketResolverModule {
     }>;
     /**
      * Claims the bounty reward for voting correctly on a resolved market.
+     * @param marketToken - prediction market token address
      */
     claimBounty(marketToken: Address): Promise<{
         hash: `0x${string}`;
@@ -1564,6 +1711,8 @@ declare class MarketResolverModule {
     }>;
     /**
      * Claims an early bounty reward for a specific dispute round.
+     * @param marketToken - prediction market token address
+     * @param round - dispute round number (integer)
      */
     claimEarlyBounty(marketToken: Address, round: bigint): Promise<{
         hash: `0x${string}`;
@@ -1571,54 +1720,74 @@ declare class MarketResolverModule {
     }>;
     /**
      * Returns the dispute data struct for a market.
+     * @param marketToken - prediction market token address
      */
     getDisputeData(marketToken: Address): Promise<unknown>;
     /**
      * Returns whether a market has been resolved.
+     * @param marketToken - prediction market token address
      */
     isResolved(marketToken: Address): Promise<boolean>;
     /**
      * Returns the final outcome of a resolved market.
+     * @param marketToken - prediction market token address
      */
     getFinalOutcome(marketToken: Address): Promise<number>;
     /**
      * Returns whether a market is currently in a dispute.
+     * @param marketToken - prediction market token address
      */
     isInDispute(marketToken: Address): Promise<boolean>;
     /**
      * Returns whether a market is currently in a veto period.
+     * @param marketToken - prediction market token address
      */
     isInVeto(marketToken: Address): Promise<boolean>;
     /**
      * Returns the current dispute round for a market.
+     * @param marketToken - prediction market token address
      */
     getCurrentRound(marketToken: Address): Promise<bigint>;
     /**
      * Returns the vote count for a specific outcome in a specific round.
+     * @param marketToken - prediction market token address
+     * @param round - dispute round number (integer)
+     * @param outcomeId - outcome index
      */
     getVoteCount(marketToken: Address, round: bigint, outcomeId: number): Promise<bigint>;
     /**
      * Returns whether a voter has already voted in a specific round.
+     * @param marketToken - prediction market token address
+     * @param round - dispute round number (integer)
+     * @param voter - voter wallet address
      */
     hasVoted(marketToken: Address, round: bigint, voter: Address): Promise<boolean>;
     /**
      * Returns the outcome a voter chose in a specific round.
+     * @param marketToken - prediction market token address
+     * @param round - dispute round number (integer)
+     * @param voter - voter wallet address
      */
     getVoterChoice(marketToken: Address, round: bigint, voter: Address): Promise<number>;
     /**
      * Returns the bounty amount per correct vote for a resolved market.
+     * @param marketToken - prediction market token address
      */
     getBountyPerVote(marketToken: Address): Promise<bigint>;
     /**
      * Returns whether a voter has already claimed the bounty for a market.
+     * @param marketToken - prediction market token address
+     * @param voter - voter wallet address
      */
     hasClaimed(marketToken: Address, voter: Address): Promise<boolean>;
     /**
      * Returns the staked amount for a voter.
+     * @param voter - voter wallet address
      */
     getUserStake(voter: Address): Promise<bigint>;
     /**
      * Returns whether an address is a registered voter.
+     * @param voter - voter wallet address
      */
     isVoter(voter: Address): Promise<boolean>;
     /**
@@ -1648,6 +1817,9 @@ declare class PrivateMarketsModule {
      * Requires SIWE authentication.
      *
      * Returns { hash, receipt, marketTokenAddress, imageUrl, metadata }
+     * @param options.endTime - Unix timestamp in seconds
+     * @param options.bonding - USDB amount in wei (18 decimals)
+     * @param options.seedAmount - USDB amount in wei (18 decimals)
      */
     createMarketWithMetadata(options: {
         marketName: string;
@@ -1677,6 +1849,9 @@ declare class PrivateMarketsModule {
     /**
      * Executes an AMM buy for a private market outcome.
      * Auto-approves the input token.
+     * @param inputAmount - input token amount in wei (18 decimals)
+     * @param minUsdb - minimum USDB in wei (18 decimals)
+     * @param minShares - minimum shares in wei (18 decimals)
      */
     buy(marketToken: Address, outcomeId: number, inputToken: Address, inputAmount: bigint, minUsdb: bigint, minShares: bigint): Promise<{
         hash: `0x${string}`;
@@ -1691,6 +1866,8 @@ declare class PrivateMarketsModule {
     }>;
     /**
      * Creates a limit order on a private market.
+     * @param amount - shares in wei (18 decimals)
+     * @param pricePerShare - USDB per share in wei (18 decimals)
      */
     listOrder(marketToken: Address, outcomeId: number, amount: bigint, pricePerShare: bigint): Promise<{
         hash: `0x${string}`;
@@ -1706,6 +1883,7 @@ declare class PrivateMarketsModule {
     /**
      * Fills a specific order on a private market.
      * Auto-approves USDB for the order cost.
+     * @param fill - shares to fill in wei (18 decimals)
      */
     buyOrder(marketToken: Address, orderId: bigint, fill: bigint): Promise<{
         hash: `0x${string}`;
@@ -1713,6 +1891,7 @@ declare class PrivateMarketsModule {
     }>;
     /**
      * Sweeps multiple orders on a private market.
+     * @param usdbAmount - USDB amount in wei (18 decimals)
      */
     buyMultipleOrders(marketToken: Address, orderIds: bigint[], usdbAmount: bigint): Promise<{
         hash: `0x${string}`;
@@ -1721,6 +1900,8 @@ declare class PrivateMarketsModule {
     /**
      * Buys from order book and AMM in a single transaction.
      * Auto-approves the input token.
+     * @param totalInput - input token amount in wei (18 decimals)
+     * @param minShares - minimum shares in wei (18 decimals)
      */
     buyOrdersAndContract(marketToken: Address, outcomeId: number, orderIds: bigint[], inputToken: Address, totalInput: bigint, minShares: bigint): Promise<{
         hash: `0x${string}`;
@@ -1770,6 +1951,7 @@ declare class PrivateMarketsModule {
     }>;
     /**
      * Manages the whitelist for a private market.
+     * @param amount - token amount in wei (18 decimals)
      */
     manageWhitelist(marketToken: Address, wallets: Address[], amount: bigint, tag: string, status: boolean): Promise<{
         hash: `0x${string}`;
@@ -1801,10 +1983,12 @@ declare class PrivateMarketsModule {
     getBountyPool(marketToken: Address): Promise<bigint>;
     /**
      * Returns the cost to buy an order.
+     * @param fill - shares to fill in wei (18 decimals)
      */
     getBuyOrderCost(marketToken: Address, orderId: bigint, fill: bigint): Promise<unknown>;
     /**
      * Returns the amounts out when buying an order with a specific USDB amount.
+     * @param usdbAmount - USDB amount in wei (18 decimals)
      */
     getBuyOrderAmountsOut(marketToken: Address, orderId: bigint, usdbAmount: bigint): Promise<unknown>;
     /**
@@ -1856,10 +2040,13 @@ declare class MarketReaderModule {
     /**
      * Estimates the number of shares received for a given USDB input,
      * considering both order book fills and AMM.
+     * @param usdbAmount - USDB amount in wei (18 decimals)
      */
     estimateSharesOut(routerAddress: Address, marketToken: Address, outcomeId: number, usdbAmount: bigint, orderIds: bigint[], user: Address): Promise<bigint>;
     /**
      * Returns potential payout for holding or selling shares.
+     * @param sharesAmount - shares in wei (18 decimals)
+     * @param estimatedUsdbToPool - USDB amount in wei (18 decimals)
      */
     getPotentialPayout(routerAddress: Address, marketToken: Address, outcomeId: number, sharesAmount: bigint, estimatedUsdbToPool: bigint): Promise<{
         holdPayout: bigint;
@@ -1873,38 +2060,74 @@ declare class LeverageSimulatorModule {
     constructor(client: BasisClient, leverageAddress: Address);
     /**
      * Simulates a leveraged buy and returns the EndResult struct.
+     * @param amount - wei (18 decimals)
+     * @param path - swap path token addresses
+     * @param numberOfDays - integer, number of days
      */
     simulateLeverage(amount: bigint, path: Address[], numberOfDays: bigint): Promise<unknown>;
     /**
      * Simulates a leveraged buy via factory and returns the EndResult struct.
+     * @param amount - wei (18 decimals)
+     * @param path - swap path token addresses
+     * @param numberOfDays - integer, number of days
      */
     simulateLeverageFactory(amount: bigint, path: Address[], numberOfDays: bigint): Promise<unknown>;
     /**
      * Calculates the floor price for a hybrid token.
+     * @param hybridMultiplier - raw integer (not wei)
+     * @param reserve0 - reserve amount in wei (18 decimals)
+     * @param reserve1 - reserve amount in wei (18 decimals)
+     * @param baseReserve0 - reserve amount in wei (18 decimals)
+     * @param xereserve0 - reserve amount in wei (18 decimals)
+     * @param xereserve1 - reserve amount in wei (18 decimals)
      */
     calculateFloor(hybridMultiplier: bigint, reserve0: bigint, reserve1: bigint, baseReserve0: bigint, xereserve0: bigint, xereserve1: bigint): Promise<bigint>;
     /**
      * Returns the token price given reserves.
+     * @param reserve0 - reserve amount in wei (18 decimals)
+     * @param reserve1 - reserve amount in wei (18 decimals)
      */
     getTokenPrice(reserve0: bigint, reserve1: bigint): Promise<bigint>;
     /**
      * Returns the USD price of a token given reserves.
+     * @param reserve0 - reserve amount in wei (18 decimals)
+     * @param reserve1 - reserve amount in wei (18 decimals)
+     * @param xereserve0 - reserve amount in wei (18 decimals)
+     * @param xereserve1 - reserve amount in wei (18 decimals)
      */
     getUSDPrice(reserve0: bigint, reserve1: bigint, xereserve0: bigint, xereserve1: bigint): Promise<bigint>;
     /**
      * Returns the collateral value in USDB for a given token amount.
+     * @param tokenAmount - amount in wei (18 decimals)
+     * @param reserve0 - reserve amount in wei (18 decimals)
+     * @param reserve1 - reserve amount in wei (18 decimals)
      */
     getCollateralValue(tokenAmount: bigint, reserve0: bigint, reserve1: bigint): Promise<bigint>;
     /**
      * Returns the collateral value for a hybrid token.
+     * @param tokenAmount - amount in wei (18 decimals)
+     * @param reserve0 - reserve amount in wei (18 decimals)
+     * @param reserve1 - reserve amount in wei (18 decimals)
+     * @param xereserve0 - reserve amount in wei (18 decimals)
+     * @param xereserve1 - reserve amount in wei (18 decimals)
+     * @param multiplier - raw integer (not wei)
+     * @param basereserve0 - reserve amount in wei (18 decimals)
      */
     getCollateralValueHybrid(tokenAmount: bigint, reserve0: bigint, reserve1: bigint, xereserve0: bigint, xereserve1: bigint, multiplier: bigint, basereserve0: bigint): Promise<bigint>;
     /**
      * Calculates how many tokens can be purchased for a given USDB amount.
+     * @param usdbAmount - amount in wei (18 decimals)
+     * @param reserve0 - reserve amount in wei (18 decimals)
+     * @param reserve1 - reserve amount in wei (18 decimals)
      */
     calculateTokensForBuy(usdbAmount: bigint, reserve0: bigint, reserve1: bigint): Promise<bigint>;
     /**
      * Calculates the number of tokens to burn for a given input.
+     * @param amountIn - amount in wei (18 decimals)
+     * @param multiplier - raw integer (not wei)
+     * @param inputreserve0 - reserve amount in wei (18 decimals)
+     * @param inputreserve1 - reserve amount in wei (18 decimals)
+     * @param splitter - raw integer
      */
     calculateTokensToBurn(amountIn: bigint, multiplier: bigint, inputreserve0: bigint, inputreserve1: bigint, splitter: bigint): Promise<bigint>;
 }
@@ -1916,14 +2139,18 @@ declare class TaxesModule {
     private _syncTx;
     /**
      * Returns the effective tax rate (in basis points) for a specific token and user.
+     * @param token - token contract address
+     * @param user - user wallet address
      */
     getTaxRate(token: Address, user: Address): Promise<bigint>;
     /**
      * Returns the current surge tax rate (in basis points) for a token.
+     * @param token - token contract address
      */
     getCurrentSurgeTax(token: Address): Promise<bigint>;
     /**
      * Returns the available surge quota for a token.
+     * @param token - token contract address
      */
     getAvailableSurgeQuota(token: Address): Promise<bigint>;
     /**
@@ -1937,6 +2164,10 @@ declare class TaxesModule {
     }>;
     /**
      * Start a decaying surge tax on a factory token. Only callable by the token's DEV.
+     * @param startRate - basis points (0-10000)
+     * @param endRate - basis points (0-10000)
+     * @param duration - duration in seconds
+     * @param token - token contract address
      */
     startSurgeTax(startRate: bigint, endRate: bigint, duration: bigint, token: Address): Promise<{
         hash: `0x${string}`;
@@ -1944,6 +2175,7 @@ declare class TaxesModule {
     }>;
     /**
      * End an active surge tax early. Only callable by the token's DEV.
+     * @param token - token contract address
      */
     endSurgeTax(token: Address): Promise<{
         hash: `0x${string}`;
@@ -1951,6 +2183,9 @@ declare class TaxesModule {
     }>;
     /**
      * Add a developer revenue share wallet for a token. Only callable by the token's DEV.
+     * @param token - token contract address
+     * @param wallet - revenue share recipient address
+     * @param basisPoints - basis points (0-10000)
      */
     addDevShare(token: Address, wallet: Address, basisPoints: bigint): Promise<{
         hash: `0x${string}`;
@@ -1958,6 +2193,8 @@ declare class TaxesModule {
     }>;
     /**
      * Remove a developer revenue share wallet. Only callable by the token's DEV.
+     * @param token - token contract address
+     * @param wallet - revenue share recipient address
      */
     removeDevShare(token: Address, wallet: Address): Promise<{
         hash: `0x${string}`;
@@ -1970,6 +2207,11 @@ interface AgentConfig {
     description?: string;
     image?: string;
     capabilities?: string[];
+}
+declare class AgentSyncError extends Error {
+    hash: string;
+    agentId: bigint;
+    constructor(message: string, hash: string, agentId: bigint);
 }
 declare class AgentIdentityModule {
     private client;
@@ -1985,10 +2227,13 @@ declare class AgentIdentityModule {
      */
     isRegistered(wallet: Address): Promise<boolean>;
     /**
+     * Look up the agentId for a wallet by scanning Registered events on-chain.
+     * Returns the agentId or null if not found.
+     */
+    getAgentIdFromChain(wallet: Address): Promise<bigint | null>;
+    /**
      * Register the current wallet as an ERC-8004 agent.
-     * Returns the agentId.
-     *
-     * If already registered on-chain, returns null (check via isRegistered first).
+     * Returns the agentId. Always syncs to backend — throws on sync failure.
      */
     register(config?: AgentConfig): Promise<{
         hash: string;
@@ -2006,7 +2251,7 @@ declare class AgentIdentityModule {
     /**
      * Sync agent registration to the backend API.
      */
-    private syncToApi;
+    syncToApi(wallet: string, agentId: bigint, config?: AgentConfig): Promise<void>;
     /**
      * Look up an agent by wallet address via the API.
      */
@@ -2044,6 +2289,7 @@ interface BasisClientOptions {
     privateKey?: `0x${string}`;
     apiKey?: string;
     apiDomain?: string;
+    /** If true (default), transactions try BSC Megafuel (zero gas) first, falling back to regular RPC. */
     gasless?: boolean;
     factoryAddress?: Address;
     swapAddress?: Address;
@@ -2163,4 +2409,4 @@ declare class BasisClient {
     }>;
 }
 
-export { type AgentConfig, AgentIdentityModule, type ApiKeyInfo, BasisAPI, BasisClient, type BasisClientOptions, type Candle, type Comment, type CursorPagination, FactoryModule, LeverageSimulatorModule, type LiquidityEntry, LoansModule, MarketReaderModule, MarketResolverModule, type MetadataPayload, type MyProfile, type MyProjectItem, type MyProjects, type MyReferrals, type MySocial, type MyStats, type MyXAccount, type Order, OrderBookModule, type Pagination, PredictionMarketsModule, PrivateMarketsModule, type ProjectUpdatePayload, type ReferralUser, StakingModule, TaxesModule, type Token, type Trade, TradingModule, type UpdateProfilePayload, type UpdateProfileResult, VestingModule, type WalletTransaction, type WhitelistEntry };
+export { type AgentConfig, AgentIdentityModule, AgentSyncError, type ApiKeyInfo, BasisAPI, BasisClient, type BasisClientOptions, type Candle, type Comment, type CursorPagination, FactoryModule, LeverageSimulatorModule, type LiquidityEntry, LoansModule, MarketReaderModule, MarketResolverModule, type MetadataPayload, type MyProfile, type MyProjectItem, type MyProjects, type MyReferrals, type MySocial, type MyStats, type MyXAccount, type Order, OrderBookModule, type Pagination, PredictionMarketsModule, PrivateMarketsModule, type ProjectUpdatePayload, type ReferralUser, StakingModule, TaxesModule, type Token, type Trade, TradingModule, type UpdateProfilePayload, type UpdateProfileResult, VestingModule, type WalletTransaction, type WhitelistEntry };

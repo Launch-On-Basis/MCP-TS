@@ -120,8 +120,11 @@ var BasisAPI = class {
    * POST /api/images — upload an image file.
    *
    * Accepts Blob, Buffer, or a File-like object. Returns the hosted URL string.
+   *
+   * @param purpose - "token" (requires address) or "avatar"
+   * @param address - token/market contract address (required when purpose is "token")
    */
-  async uploadImage(file, filename = "image.png") {
+  async uploadImage(file, filename = "image.png", purpose = "token", address) {
     const formData = new FormData();
     if (Buffer.isBuffer(file)) {
       const ext = filename.split(".").pop()?.toLowerCase();
@@ -138,16 +141,17 @@ var BasisAPI = class {
     } else {
       formData.append("file", file, filename);
     }
+    formData.append("purpose", purpose);
+    if (purpose === "token") {
+      if (!address) throw new Error('address is required when purpose is "token"');
+      formData.append("address", address);
+    }
     const res = await this.fetchWithSession("/api/images", {
       method: "POST",
       body: formData
     });
-    const text = await res.text();
-    try {
-      return JSON.parse(text);
-    } catch {
-      return text;
-    }
+    const json = await res.json();
+    return json.url;
   }
   /**
    * Downloads an image from a URL, resizes it to 512x512 (center-crop),
@@ -155,7 +159,7 @@ var BasisAPI = class {
    *
    * Returns the hosted IPFS URL string.
    */
-  async uploadImageFromUrl(imageUrl, contractAddress) {
+  async uploadImageFromUrl(imageUrl, contractAddress, purpose = "token") {
     const response = await fetch(imageUrl);
     if (!response.ok) {
       throw new Error(`Failed to download image from ${imageUrl}: ${response.status}`);
@@ -164,7 +168,7 @@ var BasisAPI = class {
     const inputBuffer = Buffer.from(arrayBuffer);
     const webpBuffer = await sharp(inputBuffer).resize(512, 512, { fit: "cover", position: "centre" }).webp({ quality: 90 }).toBuffer();
     const filename = contractAddress ? `${contractAddress}.webp` : `image_${Date.now()}.webp`;
-    return this.uploadImage(webpBuffer, filename);
+    return this.uploadImage(webpBuffer, filename, purpose, contractAddress);
   }
   // -----------------------------------------------------------------------
   // Metadata (session-based, must be creator)
@@ -260,6 +264,7 @@ var BasisAPI = class {
     const params = new URLSearchParams();
     if (options.search !== void 0) params.set("search", options.search);
     if (options.isPrediction !== void 0) params.set("isPrediction", String(options.isPrediction));
+    if (options.dev !== void 0) params.set("dev", options.dev);
     if (options.sort !== void 0) params.set("sort", options.sort);
     if (options.page !== void 0) params.set("page", String(options.page));
     if (options.limit !== void 0) params.set("limit", String(options.limit));
@@ -729,6 +734,8 @@ var BasisAPI = class {
    * - `{ social: { platform, handle } }` — link a social account
    * - `{ removeSocial: platform }` — unlink a social account
    * - `{ toggleSocialPublic: platform }` — flip public/private on a social
+   * - `{ avatar: url }` — set avatar (must be HTTPS URL)
+   * - `{ avatar: null }` — clear avatar
    */
   async updateMyProfile(payload) {
     const res = await this.fetchWithAuth("/api/v1/me/profile", {
@@ -737,6 +744,21 @@ var BasisAPI = class {
       body: JSON.stringify(payload)
     });
     return res.json();
+  }
+  /**
+   * Upload an avatar image and set it on the profile in one call.
+   * Accepts a raw file (Blob/Buffer) or an image URL to download and resize.
+   * Returns the hosted avatar URL.
+   */
+  async setAvatar(source, filename = "avatar.webp") {
+    let url;
+    if (typeof source === "string") {
+      url = await this.uploadImageFromUrl(source, void 0, "avatar");
+    } else {
+      url = await this.uploadImage(source, filename, "avatar");
+    }
+    await this.updateMyProfile({ avatar: url });
+    return url;
   }
   /**
    * GET /api/v1/me/referrals — referral overview for the authenticated user.
@@ -2770,11 +2792,7 @@ var FactoryModule = class {
     this.factoryAddress = factoryAddress;
   }
   async _syncTx(txHash) {
-    try {
-      await this.client.api.syncTransaction(txHash);
-    } catch (e) {
-      console.warn("Sync warning:", e.message || e);
-    }
+    await this.client.api.syncTransaction(txHash);
   }
   /**
    * Internal: creates a token on-chain. Use createTokenWithMetadata() instead.
@@ -2822,6 +2840,11 @@ var FactoryModule = class {
    * 4. Creates metadata on IPFS (name, symbol, description auto-read from chain)
    *
    * Returns { hash, receipt, tokenAddress, imageUrl, metadata }
+   *
+   * @param options.hybridMultiplier - raw integer (not wei) — controls floor price rise speed
+   * @param options.usdbForBonding - USDB amount in wei (18 decimals)
+   * @param options.startLP - initial liquidity in wei (18 decimals)
+   * @param options.imageUrl - URL of the token image (required)
    */
   async createTokenWithMetadata(options) {
     const createResult = await this.createToken(
@@ -2857,7 +2880,7 @@ var FactoryModule = class {
       telegram: options.telegram,
       twitterx: options.twitterx
     });
-    this._syncTx(createResult.hash);
+    await this._syncTx(createResult.hash);
     return {
       hash: createResult.hash,
       receipt: createResult.receipt,
@@ -2878,9 +2901,12 @@ var FactoryModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return receipt;
   }
+  /**
+   * @param amount - token amount in wei (18 decimals)
+   */
   async setWhitelistedWallet(tokenAddress, wallets, amount, tag) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
       throw new Error("Wallet account is required.");
@@ -2894,7 +2920,7 @@ var FactoryModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return receipt;
   }
   async getTokenState(tokenAddress) {
@@ -2966,7 +2992,7 @@ var FactoryModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
@@ -3004,7 +3030,7 @@ var FactoryModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return receipt;
   }
 };
@@ -3659,11 +3685,7 @@ var TradingModule = class {
     this.swapAddress = swapAddress;
   }
   async _syncTx(txHash) {
-    try {
-      await this.client.api.syncTransaction(txHash);
-    } catch (e) {
-      console.warn("Sync warning:", e.message || e);
-    }
+    await this.client.api.syncTransaction(txHash);
   }
   /**
    * Automatically approves the token to be spent by the SWAP contract.
@@ -3695,6 +3717,10 @@ var TradingModule = class {
   /**
    * Buys tokens during the bonding curve phase.
    * Calls buyTokens on SWAP.sol.
+   * @param amount — input token amount in wei (18 decimals)
+   * @param minOut — minimum output amount in wei (18 decimals)
+   * @param path — ordered list of token addresses for the swap route
+   * @param wrapTokens — whether to wrap output tokens
    */
   async buyBondingTokens(amount, minOut, path, wrapTokens) {
     return this.buyTokens(amount, minOut, path, wrapTokens);
@@ -3702,12 +3728,20 @@ var TradingModule = class {
   /**
    * Sells tokens during the bonding curve phase.
    * Calls sellTokens on SWAP.sol.
+   * @param amount — token amount to sell in wei (18 decimals)
+   * @param minOut — minimum output amount in wei (18 decimals)
+   * @param path — ordered list of token addresses for the swap route
+   * @param swapToETH — whether to unwrap output to native ETH
    */
   async sellBondingTokens(amount, minOut, path, swapToETH) {
     return this.sellTokens(amount, minOut, path, swapToETH);
   }
   /**
    * General buy tokens function.
+   * @param amount — input token amount in wei (18 decimals)
+   * @param minOut — minimum output amount in wei (18 decimals)
+   * @param path — ordered list of token addresses for the swap route
+   * @param wrapTokens — whether to wrap output tokens
    */
   async buyTokens(amount, minOut, path, wrapTokens) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -3726,11 +3760,15 @@ var TradingModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
    * General sell tokens function.
+   * @param amount — token amount to sell in wei (18 decimals)
+   * @param minOut — minimum output amount in wei (18 decimals)
+   * @param path — ordered list of token addresses for the swap route
+   * @param swapToETH — whether to unwrap output to native ETH
    */
   async sellTokens(amount, minOut, path, swapToETH) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -3749,12 +3787,16 @@ var TradingModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
    * Simplified buy: purchases the target token using USDB.
    * Automatically builds the correct swap path.
+   * @param tokenAddress — address of the token to buy
+   * @param usdbAmount — USDB amount in wei (18 decimals)
+   * @param minOut — minimum output amount in wei (18 decimals)
+   * @param wrapTokens — whether to wrap output tokens
    */
   async buy(tokenAddress, usdbAmount, minOut = 0n, wrapTokens = false) {
     const path = this.buildBuyPath(tokenAddress);
@@ -3764,6 +3806,11 @@ var TradingModule = class {
    * Simplified sell: sells a token.
    * For factory tokens, set toUsdb=true to swap all the way to USDB (3-hop),
    * or false to stop at MAINTOKEN (2-hop). Ignored when selling MAINTOKEN.
+   * @param tokenAddress — address of the token to sell
+   * @param amount — token amount to sell in wei (18 decimals)
+   * @param toUsdb — whether to swap all the way to USDB
+   * @param minOut — minimum output amount in wei (18 decimals)
+   * @param swapToETH — whether to unwrap output to native ETH
    */
   async sell(tokenAddress, amount, toUsdb = false, minOut = 0n, swapToETH = false) {
     const path = this.buildSellPath(tokenAddress, toUsdb);
@@ -3792,6 +3839,10 @@ var TradingModule = class {
   }
   /**
    * Leveraged buy: purchases tokens with leverage (creates a loan position).
+   * @param amount — USDB collateral amount in wei (18 decimals)
+   * @param minOut — minimum output amount in wei (18 decimals)
+   * @param path — ordered list of token addresses for the swap route
+   * @param numberOfDays — loan duration in days, integer, minimum 10
    */
   async leverageBuy(amount, minOut, path, numberOfDays) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -3810,12 +3861,16 @@ var TradingModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
    * Partially sells collateral from a loan/leverage position.
    * percentage must be divisible by 10 (10-100).
+   * @param loanId — ID of the loan/leverage position
+   * @param percentage — integer 10-100, divisible by 10
+   * @param isLeverage — true if leverage position, false if loan
+   * @param minOut — minimum output amount in wei (18 decimals)
    */
   async partialLoanSell(loanId, percentage, isLeverage, minOut) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -3830,12 +3885,16 @@ var TradingModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
    * Sells a percentage of the user's token balance.
-   * percentage: 1-100
+   * @param tokenAddress — address of the token to sell
+   * @param percentage — integer 1-100
+   * @param toUsdb — whether to swap all the way to USDB
+   * @param minOut — minimum output amount in wei (18 decimals)
+   * @param swapToETH — whether to unwrap output to native ETH
    */
   async sellPercentage(tokenAddress, percentage, toUsdb = false, minOut = 0n, swapToETH = false) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -3904,6 +3963,8 @@ var TradingModule = class {
   }
   /**
    * Returns the expected output amounts for a given input amount and swap path.
+   * @param amount — input token amount in wei (18 decimals)
+   * @param path — ordered list of token addresses for the swap route
    */
   async getAmountsOut(amount, path) {
     return this.client.publicClient.readContract({
@@ -5610,11 +5671,7 @@ var PredictionMarketsModule = class {
     this.marketTradingAddress = marketTradingAddress;
   }
   async _syncTx(txHash) {
-    try {
-      await this.client.api.syncTransaction(txHash);
-    } catch (e) {
-      console.warn("Sync warning:", e.message || e);
-    }
+    await this.client.api.syncTransaction(txHash);
   }
   /**
    * Helper to approve tokens for the MarketTrading contract
@@ -5674,7 +5731,7 @@ var PredictionMarketsModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
@@ -5682,6 +5739,9 @@ var PredictionMarketsModule = class {
    * Requires SIWE authentication.
    *
    * Returns { hash, receipt, marketTokenAddress, imageUrl, metadata }
+   * @param options.endTime - Unix timestamp in seconds
+   * @param options.bonding - USDB amount in wei (18 decimals)
+   * @param options.seedAmount - USDB amount in wei (18 decimals)
    */
   async createMarketWithMetadata(options) {
     const createResult = await this.createMarket(
@@ -5716,7 +5776,7 @@ var PredictionMarketsModule = class {
       telegram: options.telegram,
       twitterx: options.twitterx
     });
-    this._syncTx(createResult.hash);
+    await this._syncTx(createResult.hash);
     return {
       hash: createResult.hash,
       receipt: createResult.receipt,
@@ -5727,6 +5787,12 @@ var PredictionMarketsModule = class {
   }
   /**
    * Executes an AMM buy for a prediction outcome.
+   * @param marketToken - market token address
+   * @param outcomeId - outcome index
+   * @param inputToken - input token address
+   * @param inputAmount - input token amount in wei (18 decimals)
+   * @param minUsdb - minimum USDB in wei (18 decimals)
+   * @param minShares - minimum shares in wei (18 decimals)
    */
   async buy(marketToken, outcomeId, inputToken, inputAmount, minUsdb, minShares) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -5742,7 +5808,7 @@ var PredictionMarketsModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
@@ -5761,7 +5827,7 @@ var PredictionMarketsModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
@@ -5851,6 +5917,9 @@ var PredictionMarketsModule = class {
       args: [marketToken]
     });
   }
+  /**
+   * @param usdbAmount - USDB amount in wei (18 decimals)
+   */
   async getBuyOrderAmountsOut(marketToken, orderId, usdbAmount) {
     return this.client.publicClient.readContract({
       address: this.marketTradingAddress,
@@ -5859,6 +5928,11 @@ var PredictionMarketsModule = class {
       args: [marketToken, orderId, usdbAmount]
     });
   }
+  /**
+   * Buys from order book and AMM in a single transaction.
+   * @param totalInput - input token amount in wei (18 decimals)
+   * @param minShares - minimum shares in wei (18 decimals)
+   */
   async buyOrdersAndContract(marketToken, outcomeId, orderIds, inputToken, totalInput, minShares) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
       throw new Error("Stateful initialization (walletClient) is required for write methods.");
@@ -5873,11 +5947,8 @@ var PredictionMarketsModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
-    try {
-      await this.client.api.syncOrder(hash, "public");
-    } catch {
-    }
+    await this._syncTx(hash);
+    await this.client.api.syncOrder(hash, "public");
     return { hash, receipt };
   }
 };
@@ -5913,6 +5984,8 @@ var OrderBookModule = class {
   }
   /**
    * Creates a limit order.
+   * @param amount - shares in wei (18 decimals)
+   * @param pricePerShare - USDB per share in wei (18 decimals)
    */
   async listOrder(marketToken, outcomeId, amount, pricePerShare) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -5951,6 +6024,7 @@ var OrderBookModule = class {
   }
   /**
    * Executes against a specific order.
+   * @param fill - shares to fill in wei (18 decimals)
    */
   async buyOrder(marketToken, orderId, fill) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -5973,6 +6047,7 @@ var OrderBookModule = class {
   }
   /**
    * Sweeps multiple orders.
+   * @param usdbAmount - USDB amount in wei (18 decimals)
    */
   async buyMultipleOrders(marketToken, orderIds, usdbAmount) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -5996,14 +6071,11 @@ var OrderBookModule = class {
    * Called automatically after listOrder, cancelOrder, buyOrder, buyMultipleOrders.
    */
   async syncOrder(txHash, marketType = "public") {
-    try {
-      await this.client.api.syncOrder(txHash, marketType);
-    } catch (err) {
-      console.warn("Order sync warning:", err instanceof Error ? err.message : err);
-    }
+    await this.client.api.syncOrder(txHash, marketType);
   }
   /**
    * Retrieves exact cost including taxes before buying.
+   * @param fill - shares to fill in wei (18 decimals)
    */
   async getBuyOrderCost(marketToken, orderId, fill) {
     return this.client.publicClient.readContract({
@@ -6015,6 +6087,7 @@ var OrderBookModule = class {
   }
   /**
    * Preview how many shares can be bought for a given USDB amount on a P2P order.
+   * @param usdbAmount - USDB amount in wei (18 decimals)
    */
   async getBuyOrderAmountsOut(marketToken, orderId, usdbAmount) {
     return this.client.publicClient.readContract({
@@ -6686,11 +6759,7 @@ var LoansModule = class {
     this.loanHubAddress = loanHubAddress;
   }
   async _syncTx(txHash) {
-    try {
-      await this.client.api.syncTransaction(txHash);
-    } catch (e) {
-      console.warn("Sync warning:", e.message || e);
-    }
+    await this.client.api.syncTransaction(txHash);
   }
   async approveIfNeeded(tokenAddress, spender, amount) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -6717,6 +6786,10 @@ var LoansModule = class {
   }
   /**
    * Takes a loan. Auto-approves the collateral token to the LoanHub.
+   * @param ecosystem - ecosystem contract address
+   * @param collateral - collateral token address
+   * @param amount - collateral amount in wei (18 decimals)
+   * @param daysCount - integer, minimum 10
    */
   async takeLoan(ecosystem, collateral, amount, daysCount) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -6732,7 +6805,7 @@ var LoansModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
@@ -6760,12 +6833,16 @@ var LoansModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
    * Prolongs duration of a loan.
    * When payInStable is true, auto-approves USDB to the LoanHub.
+   * @param hubId - loan hub identifier
+   * @param addDays - integer, minimum 10
+   * @param payInStable - whether to pay extension fee in USDB
+   * @param refinance - whether to refinance the loan
    */
   async extendLoan(hubId, addDays, payInStable, refinance) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -6791,7 +6868,7 @@ var LoansModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
@@ -6810,7 +6887,7 @@ var LoansModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
@@ -6827,6 +6904,8 @@ var LoansModule = class {
   /**
    * Increases collateral on an existing loan.
    * Reads loan details to find the collateral token, then auto-approves it.
+   * @param hubId - loan hub identifier
+   * @param amountToAdd - additional collateral in wei (18 decimals)
    */
   async increaseLoan(hubId, amountToAdd) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -6847,7 +6926,7 @@ var LoansModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
@@ -6855,6 +6934,10 @@ var LoansModule = class {
    */
   /**
    * Partially sell collateral from a hub loan position.
+   * @param hubId - loan hub identifier
+   * @param percentage - integer 10-100, divisible by 10
+   * @param isLeverage - whether this is a leverage position
+   * @param minOut - minimum output in wei (18 decimals)
    */
   async hubPartialLoanSell(hubId, percentage, isLeverage, minOut) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -6869,7 +6952,7 @@ var LoansModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   async getUserLoanCount(user) {
@@ -8290,11 +8373,7 @@ var VestingModule = class {
     this.vestingAddress = vestingAddress;
   }
   async _syncTx(txHash) {
-    try {
-      await this.client.api.syncTransaction(txHash);
-    } catch (e) {
-      console.warn("Sync warning:", e.message || e);
-    }
+    await this.client.api.syncTransaction(txHash);
   }
   async approveIfNeeded(tokenAddress, spender, amount) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -8333,6 +8412,11 @@ var VestingModule = class {
   /**
    * Creates a gradual vesting schedule.
    * Auto-approves the token to the vesting contract and attaches the creation fee.
+   *
+   * @param totalAmount - token amount in wei (18 decimals)
+   * @param startTime - Unix timestamp in seconds
+   * @param durationInDays - integer, number of days
+   * @param timeUnit - enum: 0=Second, 1=Minute, 2=Hour, 3=Day
    */
   async createGradualVesting(beneficiary, token, totalAmount, startTime, durationInDays, timeUnit, memo, ecosystem) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -8350,11 +8434,14 @@ var VestingModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
    * Creates a cliff vesting schedule.
+   *
+   * @param totalAmount - token amount in wei (18 decimals)
+   * @param unlockTime - Unix timestamp in seconds
    */
   async createCliffVesting(beneficiary, token, totalAmount, unlockTime, memo, ecosystem) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -8372,7 +8459,7 @@ var VestingModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
@@ -8391,7 +8478,7 @@ var VestingModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
@@ -8410,7 +8497,7 @@ var VestingModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
@@ -8439,7 +8526,7 @@ var VestingModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
@@ -8467,6 +8554,11 @@ var VestingModule = class {
   /**
    * Creates gradual vesting schedules for multiple beneficiaries in a single transaction.
    * Auto-approves the sum of all amounts and attaches the creation fee.
+   *
+   * @param totalAmounts - token amounts in wei (18 decimals)
+   * @param startTime - Unix timestamp in seconds
+   * @param durationInDays - integer, number of days
+   * @param timeUnit - enum: 0=Second, 1=Minute, 2=Hour, 3=Day
    */
   async batchCreateGradualVesting(beneficiaries, token, totalAmounts, userMemos, startTime, durationInDays, timeUnit, ecosystem) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -8485,12 +8577,15 @@ var VestingModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
    * Creates cliff vesting schedules for multiple beneficiaries in a single transaction.
    * Auto-approves the sum of all amounts and attaches the creation fee.
+   *
+   * @param totalAmounts - token amounts in wei (18 decimals)
+   * @param unlockTime - Unix timestamp in seconds
    */
   async batchCreateCliffVesting(beneficiaries, token, totalAmounts, unlockTime, userMemos, ecosystem) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -8509,7 +8604,7 @@ var VestingModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
@@ -8528,11 +8623,13 @@ var VestingModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
    * Extends the vesting period by additional days.
+   *
+   * @param additionalDays - integer, number of days
    */
   async extendVestingPeriod(vestingId, additionalDays) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -8547,12 +8644,14 @@ var VestingModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
    * Adds more tokens to an existing vesting schedule.
    * Auto-approves the token to the vesting contract.
+   *
+   * @param additionalAmount - token amount in wei (18 decimals)
    */
   async addTokensToVesting(vestingId, additionalAmount) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -8570,7 +8669,7 @@ var VestingModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
@@ -8589,7 +8688,7 @@ var VestingModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
@@ -8627,6 +8726,9 @@ var VestingModule = class {
   }
   /**
    * Returns vesting IDs for a given token within a specified index range.
+   *
+   * @param startIndex - array index
+   * @param endIndex - array index
    */
   async getTokenVestingIds(token, startIndex, endIndex) {
     return this.client.publicClient.readContract({
@@ -9730,11 +9832,7 @@ var StakingModule = class {
     this.stakingAddress = stakingAddress;
   }
   async _syncTx(txHash) {
-    try {
-      await this.client.api.syncTransaction(txHash);
-    } catch (e) {
-      console.warn("Sync warning:", e.message || e);
-    }
+    await this.client.api.syncTransaction(txHash);
   }
   async approveIfNeeded(tokenAddress, spender, amount) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -9762,6 +9860,7 @@ var StakingModule = class {
   /**
    * Wraps STASIS (MAINTOKEN) into wSTASIS.
    * Approves the staking contract to spend MAINTOKEN if needed.
+   * @param amount - STASIS amount in wei (18 decimals)
    */
   async buy(amount) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -9777,11 +9876,14 @@ var StakingModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
    * Unwraps wSTASIS back to STASIS, optionally converting to USDB.
+   * @param shares - wSTASIS shares in wei (18 decimals)
+   * @param claimUSDB - whether to convert to USDB
+   * @param minUSDB - minimum USDB output in wei (18 decimals)
    */
   async sell(shares, claimUSDB = false, minUSDB = 0n) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -9796,11 +9898,12 @@ var StakingModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
    * Locks wSTASIS as collateral for borrowing.
+   * @param shares - wSTASIS shares in wei (18 decimals)
    */
   async lock(shares) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -9816,11 +9919,12 @@ var StakingModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
    * Unlocks wSTASIS collateral.
+   * @param shares - wSTASIS shares in wei (18 decimals)
    */
   async unlock(shares) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -9835,12 +9939,14 @@ var StakingModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
    * Pledges STASIS as collateral and borrows USDB against it.
    * The stasisAmountToBorrow parameter is the STASIS amount to pledge — USDB received is collateral value minus fees.
+   * @param stasisAmountToBorrow - STASIS collateral amount in wei (18 decimals)
+   * @param days - integer, minimum 10
    */
   async borrow(stasisAmountToBorrow, days) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -9855,7 +9961,7 @@ var StakingModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
@@ -9882,11 +9988,14 @@ var StakingModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
    * Extends the active staking loan.
+   * @param daysToAdd - integer, minimum 10
+   * @param payInUSDB - whether to pay extension fee in USDB
+   * @param refinance - whether to refinance the loan
    */
   async extendLoan(daysToAdd, payInUSDB, refinance) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -9912,7 +10021,7 @@ var StakingModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
@@ -9940,6 +10049,7 @@ var StakingModule = class {
   }
   /**
    * Converts STASIS amount to wSTASIS shares.
+   * @param assets - STASIS amount in wei (18 decimals)
    */
   async convertToShares(assets) {
     return this.client.publicClient.readContract({
@@ -9951,6 +10061,7 @@ var StakingModule = class {
   }
   /**
    * Converts wSTASIS shares to STASIS amount.
+   * @param shares - wSTASIS shares in wei (18 decimals)
    */
   async convertToAssets(shares) {
     return this.client.publicClient.readContract({
@@ -9972,6 +10083,7 @@ var StakingModule = class {
   }
   /**
    * Borrows additional STASIS against locked wSTASIS collateral on an existing loan.
+   * @param additionalStasisToBorrow - STASIS collateral amount in wei (18 decimals)
    */
   async addToLoan(additionalStasisToBorrow) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -9986,7 +10098,7 @@ var StakingModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
@@ -10004,7 +10116,7 @@ var StakingModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
 };
@@ -11104,11 +11216,7 @@ var MarketResolverModule = class {
     this.resolverAddress = resolverAddress;
   }
   async _syncTx(txHash) {
-    try {
-      await this.client.api.syncTransaction(txHash);
-    } catch (e) {
-      console.warn("Sync warning:", e.message || e);
-    }
+    await this.client.api.syncTransaction(txHash);
   }
   async approveIfNeeded(tokenAddress, spender, amount) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -11139,6 +11247,8 @@ var MarketResolverModule = class {
   /**
    * Proposes an outcome for a market.
    * Auto-approves USDB to the resolver for the PROPOSAL_BOND amount.
+   * @param marketToken - prediction market token address
+   * @param outcomeId - outcome index
    */
   async proposeOutcome(marketToken, outcomeId) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -11159,12 +11269,14 @@ var MarketResolverModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
    * Disputes a proposed outcome.
    * Auto-approves USDB to the resolver for the PROPOSAL_BOND amount.
+   * @param marketToken - prediction market token address
+   * @param newOutcomeId - proposed alternative outcome index
    */
   async dispute(marketToken, newOutcomeId) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -11185,11 +11297,13 @@ var MarketResolverModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
    * Casts a vote on a disputed market outcome.
+   * @param marketToken - prediction market token address
+   * @param outcomeId - outcome index to vote for
    */
   async vote(marketToken, outcomeId) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -11204,12 +11318,13 @@ var MarketResolverModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
    * Stakes tokens to become a resolver voter.
    * Auto-approves the token to the resolver for MIN_STAKE_AMOUNT.
+   * @param token - token contract address to stake
    */
   async stake(token) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -11230,11 +11345,12 @@ var MarketResolverModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
    * Unstakes tokens, removing resolver voter status.
+   * @param token - token contract address to unstake
    */
   async unstake(token) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -11249,11 +11365,12 @@ var MarketResolverModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
    * Finalizes an uncontested market (proposal period expired without dispute).
+   * @param marketToken - prediction market token address
    */
   async finalizeUncontested(marketToken) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -11268,11 +11385,12 @@ var MarketResolverModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
    * Finalizes a disputed market after the dispute period.
+   * @param marketToken - prediction market token address
    */
   async finalizeMarket(marketToken) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -11287,12 +11405,14 @@ var MarketResolverModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
    * Vetoes a proposed outcome.
    * Auto-approves USDB to the resolver for the PROPOSAL_BOND amount.
+   * @param marketToken - prediction market token address
+   * @param proposedOutcome - outcome index being vetoed
    */
   async veto(marketToken, proposedOutcome) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -11313,11 +11433,12 @@ var MarketResolverModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
    * Claims the bounty reward for voting correctly on a resolved market.
+   * @param marketToken - prediction market token address
    */
   async claimBounty(marketToken) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -11332,11 +11453,13 @@ var MarketResolverModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
    * Claims an early bounty reward for a specific dispute round.
+   * @param marketToken - prediction market token address
+   * @param round - dispute round number (integer)
    */
   async claimEarlyBounty(marketToken, round) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -11351,7 +11474,7 @@ var MarketResolverModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   // -----------------------------------------------------------------------
@@ -11359,6 +11482,7 @@ var MarketResolverModule = class {
   // -----------------------------------------------------------------------
   /**
    * Returns the dispute data struct for a market.
+   * @param marketToken - prediction market token address
    */
   async getDisputeData(marketToken) {
     return this.client.publicClient.readContract({
@@ -11370,6 +11494,7 @@ var MarketResolverModule = class {
   }
   /**
    * Returns whether a market has been resolved.
+   * @param marketToken - prediction market token address
    */
   async isResolved(marketToken) {
     return this.client.publicClient.readContract({
@@ -11381,6 +11506,7 @@ var MarketResolverModule = class {
   }
   /**
    * Returns the final outcome of a resolved market.
+   * @param marketToken - prediction market token address
    */
   async getFinalOutcome(marketToken) {
     return this.client.publicClient.readContract({
@@ -11392,6 +11518,7 @@ var MarketResolverModule = class {
   }
   /**
    * Returns whether a market is currently in a dispute.
+   * @param marketToken - prediction market token address
    */
   async isInDispute(marketToken) {
     return this.client.publicClient.readContract({
@@ -11403,6 +11530,7 @@ var MarketResolverModule = class {
   }
   /**
    * Returns whether a market is currently in a veto period.
+   * @param marketToken - prediction market token address
    */
   async isInVeto(marketToken) {
     return this.client.publicClient.readContract({
@@ -11414,6 +11542,7 @@ var MarketResolverModule = class {
   }
   /**
    * Returns the current dispute round for a market.
+   * @param marketToken - prediction market token address
    */
   async getCurrentRound(marketToken) {
     return this.client.publicClient.readContract({
@@ -11425,6 +11554,9 @@ var MarketResolverModule = class {
   }
   /**
    * Returns the vote count for a specific outcome in a specific round.
+   * @param marketToken - prediction market token address
+   * @param round - dispute round number (integer)
+   * @param outcomeId - outcome index
    */
   async getVoteCount(marketToken, round, outcomeId) {
     return this.client.publicClient.readContract({
@@ -11436,6 +11568,9 @@ var MarketResolverModule = class {
   }
   /**
    * Returns whether a voter has already voted in a specific round.
+   * @param marketToken - prediction market token address
+   * @param round - dispute round number (integer)
+   * @param voter - voter wallet address
    */
   async hasVoted(marketToken, round, voter) {
     return this.client.publicClient.readContract({
@@ -11447,6 +11582,9 @@ var MarketResolverModule = class {
   }
   /**
    * Returns the outcome a voter chose in a specific round.
+   * @param marketToken - prediction market token address
+   * @param round - dispute round number (integer)
+   * @param voter - voter wallet address
    */
   async getVoterChoice(marketToken, round, voter) {
     return this.client.publicClient.readContract({
@@ -11458,6 +11596,7 @@ var MarketResolverModule = class {
   }
   /**
    * Returns the bounty amount per correct vote for a resolved market.
+   * @param marketToken - prediction market token address
    */
   async getBountyPerVote(marketToken) {
     return this.client.publicClient.readContract({
@@ -11469,6 +11608,8 @@ var MarketResolverModule = class {
   }
   /**
    * Returns whether a voter has already claimed the bounty for a market.
+   * @param marketToken - prediction market token address
+   * @param voter - voter wallet address
    */
   async hasClaimed(marketToken, voter) {
     return this.client.publicClient.readContract({
@@ -11480,6 +11621,7 @@ var MarketResolverModule = class {
   }
   /**
    * Returns the staked amount for a voter.
+   * @param voter - voter wallet address
    */
   async getUserStake(voter) {
     return this.client.publicClient.readContract({
@@ -11491,6 +11633,7 @@ var MarketResolverModule = class {
   }
   /**
    * Returns whether an address is a registered voter.
+   * @param voter - voter wallet address
    */
   async isVoter(voter) {
     return this.client.publicClient.readContract({
@@ -13330,18 +13473,10 @@ var PrivateMarketsModule = class {
     }
   }
   async _syncTx(txHash) {
-    try {
-      await this.client.api.syncTransaction(txHash);
-    } catch (e) {
-      console.warn("Sync warning:", e.message || e);
-    }
+    await this.client.api.syncTransaction(txHash);
   }
   async syncOrder(txHash) {
-    try {
-      await this.client.api.syncOrder(txHash, "private");
-    } catch (err) {
-      console.warn("Order sync warning:", err instanceof Error ? err.message : err);
-    }
+    await this.client.api.syncOrder(txHash, "private");
   }
   // -----------------------------------------------------------------------
   // Write methods
@@ -13386,6 +13521,9 @@ var PrivateMarketsModule = class {
    * Requires SIWE authentication.
    *
    * Returns { hash, receipt, marketTokenAddress, imageUrl, metadata }
+   * @param options.endTime - Unix timestamp in seconds
+   * @param options.bonding - USDB amount in wei (18 decimals)
+   * @param options.seedAmount - USDB amount in wei (18 decimals)
    */
   async createMarketWithMetadata(options) {
     const createResult = await this.createMarket(
@@ -13421,6 +13559,7 @@ var PrivateMarketsModule = class {
       telegram: options.telegram,
       twitterx: options.twitterx
     });
+    await this._syncTx(createResult.hash);
     return {
       hash: createResult.hash,
       receipt: createResult.receipt,
@@ -13432,6 +13571,9 @@ var PrivateMarketsModule = class {
   /**
    * Executes an AMM buy for a private market outcome.
    * Auto-approves the input token.
+   * @param inputAmount - input token amount in wei (18 decimals)
+   * @param minUsdb - minimum USDB in wei (18 decimals)
+   * @param minShares - minimum shares in wei (18 decimals)
    */
   async buy(marketToken, outcomeId, inputToken, inputAmount, minUsdb, minShares) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -13471,6 +13613,8 @@ var PrivateMarketsModule = class {
   }
   /**
    * Creates a limit order on a private market.
+   * @param amount - shares in wei (18 decimals)
+   * @param pricePerShare - USDB per share in wei (18 decimals)
    */
   async listOrder(marketToken, outcomeId, amount, pricePerShare) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -13510,6 +13654,7 @@ var PrivateMarketsModule = class {
   /**
    * Fills a specific order on a private market.
    * Auto-approves USDB for the order cost.
+   * @param fill - shares to fill in wei (18 decimals)
    */
   async buyOrder(marketToken, orderId, fill) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -13532,6 +13677,7 @@ var PrivateMarketsModule = class {
   }
   /**
    * Sweeps multiple orders on a private market.
+   * @param usdbAmount - USDB amount in wei (18 decimals)
    */
   async buyMultipleOrders(marketToken, orderIds, usdbAmount) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -13553,6 +13699,8 @@ var PrivateMarketsModule = class {
   /**
    * Buys from order book and AMM in a single transaction.
    * Auto-approves the input token.
+   * @param totalInput - input token amount in wei (18 decimals)
+   * @param minShares - minimum shares in wei (18 decimals)
    */
   async buyOrdersAndContract(marketToken, outcomeId, orderIds, inputToken, totalInput, minShares) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -13569,7 +13717,7 @@ var PrivateMarketsModule = class {
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
     await this.syncOrder(hash);
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
@@ -13688,6 +13836,7 @@ var PrivateMarketsModule = class {
   }
   /**
    * Manages the whitelist for a private market.
+   * @param amount - token amount in wei (18 decimals)
    */
   async manageWhitelist(marketToken, wallets, amount, tag, status) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -13776,6 +13925,7 @@ var PrivateMarketsModule = class {
   }
   /**
    * Returns the cost to buy an order.
+   * @param fill - shares to fill in wei (18 decimals)
    */
   async getBuyOrderCost(marketToken, orderId, fill) {
     return this.client.publicClient.readContract({
@@ -13787,6 +13937,7 @@ var PrivateMarketsModule = class {
   }
   /**
    * Returns the amounts out when buying an order with a specific USDB amount.
+   * @param usdbAmount - USDB amount in wei (18 decimals)
    */
   async getBuyOrderAmountsOut(marketToken, orderId, usdbAmount) {
     return this.client.publicClient.readContract({
@@ -14086,6 +14237,7 @@ var MarketReaderModule = class {
   /**
    * Estimates the number of shares received for a given USDB input,
    * considering both order book fills and AMM.
+   * @param usdbAmount - USDB amount in wei (18 decimals)
    */
   async estimateSharesOut(routerAddress, marketToken, outcomeId, usdbAmount, orderIds, user) {
     return this.client.publicClient.readContract({
@@ -14097,6 +14249,8 @@ var MarketReaderModule = class {
   }
   /**
    * Returns potential payout for holding or selling shares.
+   * @param sharesAmount - shares in wei (18 decimals)
+   * @param estimatedUsdbToPool - USDB amount in wei (18 decimals)
    */
   async getPotentialPayout(routerAddress, marketToken, outcomeId, sharesAmount, estimatedUsdbToPool) {
     const result = await this.client.publicClient.readContract({
@@ -15065,6 +15219,9 @@ var LeverageSimulatorModule = class {
   }
   /**
    * Simulates a leveraged buy and returns the EndResult struct.
+   * @param amount - wei (18 decimals)
+   * @param path - swap path token addresses
+   * @param numberOfDays - integer, number of days
    */
   async simulateLeverage(amount, path, numberOfDays) {
     return this.client.publicClient.readContract({
@@ -15076,6 +15233,9 @@ var LeverageSimulatorModule = class {
   }
   /**
    * Simulates a leveraged buy via factory and returns the EndResult struct.
+   * @param amount - wei (18 decimals)
+   * @param path - swap path token addresses
+   * @param numberOfDays - integer, number of days
    */
   async simulateLeverageFactory(amount, path, numberOfDays) {
     return this.client.publicClient.readContract({
@@ -15087,6 +15247,12 @@ var LeverageSimulatorModule = class {
   }
   /**
    * Calculates the floor price for a hybrid token.
+   * @param hybridMultiplier - raw integer (not wei)
+   * @param reserve0 - reserve amount in wei (18 decimals)
+   * @param reserve1 - reserve amount in wei (18 decimals)
+   * @param baseReserve0 - reserve amount in wei (18 decimals)
+   * @param xereserve0 - reserve amount in wei (18 decimals)
+   * @param xereserve1 - reserve amount in wei (18 decimals)
    */
   async calculateFloor(hybridMultiplier, reserve0, reserve1, baseReserve0, xereserve0, xereserve1) {
     return this.client.publicClient.readContract({
@@ -15098,6 +15264,8 @@ var LeverageSimulatorModule = class {
   }
   /**
    * Returns the token price given reserves.
+   * @param reserve0 - reserve amount in wei (18 decimals)
+   * @param reserve1 - reserve amount in wei (18 decimals)
    */
   async getTokenPrice(reserve0, reserve1) {
     return this.client.publicClient.readContract({
@@ -15109,6 +15277,10 @@ var LeverageSimulatorModule = class {
   }
   /**
    * Returns the USD price of a token given reserves.
+   * @param reserve0 - reserve amount in wei (18 decimals)
+   * @param reserve1 - reserve amount in wei (18 decimals)
+   * @param xereserve0 - reserve amount in wei (18 decimals)
+   * @param xereserve1 - reserve amount in wei (18 decimals)
    */
   async getUSDPrice(reserve0, reserve1, xereserve0, xereserve1) {
     return this.client.publicClient.readContract({
@@ -15120,6 +15292,9 @@ var LeverageSimulatorModule = class {
   }
   /**
    * Returns the collateral value in USDB for a given token amount.
+   * @param tokenAmount - amount in wei (18 decimals)
+   * @param reserve0 - reserve amount in wei (18 decimals)
+   * @param reserve1 - reserve amount in wei (18 decimals)
    */
   async getCollateralValue(tokenAmount, reserve0, reserve1) {
     return this.client.publicClient.readContract({
@@ -15131,6 +15306,13 @@ var LeverageSimulatorModule = class {
   }
   /**
    * Returns the collateral value for a hybrid token.
+   * @param tokenAmount - amount in wei (18 decimals)
+   * @param reserve0 - reserve amount in wei (18 decimals)
+   * @param reserve1 - reserve amount in wei (18 decimals)
+   * @param xereserve0 - reserve amount in wei (18 decimals)
+   * @param xereserve1 - reserve amount in wei (18 decimals)
+   * @param multiplier - raw integer (not wei)
+   * @param basereserve0 - reserve amount in wei (18 decimals)
    */
   async getCollateralValueHybrid(tokenAmount, reserve0, reserve1, xereserve0, xereserve1, multiplier, basereserve0) {
     return this.client.publicClient.readContract({
@@ -15142,6 +15324,9 @@ var LeverageSimulatorModule = class {
   }
   /**
    * Calculates how many tokens can be purchased for a given USDB amount.
+   * @param usdbAmount - amount in wei (18 decimals)
+   * @param reserve0 - reserve amount in wei (18 decimals)
+   * @param reserve1 - reserve amount in wei (18 decimals)
    */
   async calculateTokensForBuy(usdbAmount, reserve0, reserve1) {
     return this.client.publicClient.readContract({
@@ -15153,6 +15338,11 @@ var LeverageSimulatorModule = class {
   }
   /**
    * Calculates the number of tokens to burn for a given input.
+   * @param amountIn - amount in wei (18 decimals)
+   * @param multiplier - raw integer (not wei)
+   * @param inputreserve0 - reserve amount in wei (18 decimals)
+   * @param inputreserve1 - reserve amount in wei (18 decimals)
+   * @param splitter - raw integer
    */
   async calculateTokensToBurn(amountIn, multiplier, inputreserve0, inputreserve1, splitter) {
     return this.client.publicClient.readContract({
@@ -15964,14 +16154,12 @@ var TaxesModule = class {
     this.taxesAddress = taxesAddress;
   }
   async _syncTx(txHash) {
-    try {
-      await this.client.api.syncTransaction(txHash);
-    } catch (e) {
-      console.warn("Sync warning:", e.message || e);
-    }
+    await this.client.api.syncTransaction(txHash);
   }
   /**
    * Returns the effective tax rate (in basis points) for a specific token and user.
+   * @param token - token contract address
+   * @param user - user wallet address
    */
   async getTaxRate(token, user) {
     return this.client.publicClient.readContract({
@@ -15983,6 +16171,7 @@ var TaxesModule = class {
   }
   /**
    * Returns the current surge tax rate (in basis points) for a token.
+   * @param token - token contract address
    */
   async getCurrentSurgeTax(token) {
     return this.client.publicClient.readContract({
@@ -15994,6 +16183,7 @@ var TaxesModule = class {
   }
   /**
    * Returns the available surge quota for a token.
+   * @param token - token contract address
    */
   async getAvailableSurgeQuota(token) {
     return this.client.publicClient.readContract({
@@ -16033,6 +16223,10 @@ var TaxesModule = class {
   }
   /**
    * Start a decaying surge tax on a factory token. Only callable by the token's DEV.
+   * @param startRate - basis points (0-10000)
+   * @param endRate - basis points (0-10000)
+   * @param duration - duration in seconds
+   * @param token - token contract address
    */
   async startSurgeTax(startRate, endRate, duration, token) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -16047,11 +16241,12 @@ var TaxesModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
    * End an active surge tax early. Only callable by the token's DEV.
+   * @param token - token contract address
    */
   async endSurgeTax(token) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -16066,11 +16261,14 @@ var TaxesModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
    * Add a developer revenue share wallet for a token. Only callable by the token's DEV.
+   * @param token - token contract address
+   * @param wallet - revenue share recipient address
+   * @param basisPoints - basis points (0-10000)
    */
   async addDevShare(token, wallet, basisPoints) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -16085,11 +16283,13 @@ var TaxesModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
    * Remove a developer revenue share wallet. Only callable by the token's DEV.
+   * @param token - token contract address
+   * @param wallet - revenue share recipient address
    */
   async removeDevShare(token, wallet) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -16104,7 +16304,7 @@ var TaxesModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
 };
@@ -16125,6 +16325,16 @@ var identityRegistryAbi = [
   { "inputs": [{ "name": "agentId", "type": "uint256" }], "name": "tokenURI", "outputs": [{ "name": "", "type": "string" }], "stateMutability": "view", "type": "function" },
   { "anonymous": false, "inputs": [{ "indexed": true, "name": "agentId", "type": "uint256" }, { "indexed": false, "name": "agentURI", "type": "string" }, { "indexed": true, "name": "owner", "type": "address" }], "name": "Registered", "type": "event" }
 ];
+var AgentSyncError = class extends Error {
+  hash;
+  agentId;
+  constructor(message, hash, agentId) {
+    super(message);
+    this.name = "AgentSyncError";
+    this.hash = hash;
+    this.agentId = agentId;
+  }
+};
 var AgentIdentityModule = class {
   client;
   registryAddress;
@@ -16133,11 +16343,7 @@ var AgentIdentityModule = class {
     this.registryAddress = IDENTITY_REGISTRY;
   }
   async _syncTx(txHash) {
-    try {
-      await this.client.api.syncTransaction(txHash);
-    } catch (e) {
-      console.warn("Sync warning:", e.message || e);
-    }
+    await this.client.api.syncTransaction(txHash);
   }
   /**
    * Build the on-chain metadata JSON for an agent.
@@ -16172,10 +16378,31 @@ var AgentIdentityModule = class {
     return balance > 0n;
   }
   /**
+   * Look up the agentId for a wallet by scanning Registered events on-chain.
+   * Returns the agentId or null if not found.
+   */
+  async getAgentIdFromChain(wallet) {
+    const logs = await this.client.publicClient.getLogs({
+      address: this.registryAddress,
+      event: {
+        type: "event",
+        name: "Registered",
+        inputs: [
+          { indexed: true, name: "agentId", type: "uint256" },
+          { indexed: false, name: "agentURI", type: "string" },
+          { indexed: true, name: "owner", type: "address" }
+        ]
+      },
+      args: { owner: wallet },
+      fromBlock: 0n,
+      toBlock: "latest"
+    });
+    if (logs.length === 0) return null;
+    return logs[logs.length - 1].args.agentId;
+  }
+  /**
    * Register the current wallet as an ERC-8004 agent.
-   * Returns the agentId.
-   *
-   * If already registered on-chain, returns null (check via isRegistered first).
+   * Returns the agentId. Always syncs to backend — throws on sync failure.
    */
   async register(config) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
@@ -16192,7 +16419,7 @@ var AgentIdentityModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     let agentId = 0n;
     for (const log of receipt.logs) {
       if (log.address.toLowerCase() === this.registryAddress.toLowerCase()) {
@@ -16209,6 +16436,24 @@ var AgentIdentityModule = class {
         } catch {
         }
       }
+    }
+    let syncErr = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await this.syncToApi(account.address, agentId, config);
+        syncErr = null;
+        break;
+      } catch (e) {
+        syncErr = e;
+        if (attempt < 2) await new Promise((r) => setTimeout(r, 1e3 * (attempt + 1)));
+      }
+    }
+    if (syncErr) {
+      throw new AgentSyncError(
+        `On-chain registration succeeded (agentId: ${agentId}, tx: ${hash}) but backend sync failed after 3 attempts: ${syncErr.message}. Call registerAndSync() to retry.`,
+        hash,
+        agentId
+      );
     }
     return { hash, agentId };
   }
@@ -16228,22 +16473,23 @@ var AgentIdentityModule = class {
     const alreadyRegistered = await this.isRegistered(address);
     let agentId;
     if (alreadyRegistered) {
-      try {
-        const apiAgent = await this.lookupFromApi(address);
-        if (apiAgent && apiAgent.isAgent) {
-          return BigInt(apiAgent.agent.agentId);
-        }
-      } catch {
+      const apiAgent = await this.lookupFromApi(address);
+      if (apiAgent && apiAgent.isAgent) {
+        return BigInt(apiAgent.agent.agentId);
       }
-      return 0n;
+      const chainAgentId = await this.getAgentIdFromChain(address);
+      if (chainAgentId === null) {
+        throw new Error("Agent shows as registered (balanceOf > 0) but no Registered event found on-chain");
+      }
+      await this.syncToApi(address, chainAgentId, config);
+      const synced = await this.lookupFromApi(address);
+      if (synced && synced.isAgent) {
+        return BigInt(synced.agent.agentId);
+      }
+      throw new Error("Agent registered on-chain but backend sync failed \u2014 API still shows isAgent: false");
     }
     const result = await this.register(config);
     agentId = result.agentId;
-    try {
-      await this.syncToApi(address, agentId, config);
-    } catch (err) {
-      console.warn("Agent API sync warning:", err instanceof Error ? err.message : err);
-    }
     return agentId;
   }
   /**
@@ -16340,7 +16586,7 @@ var AgentIdentityModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    this._syncTx(hash);
+    await this._syncTx(hash);
     return { hash, receipt };
   }
 };
@@ -16729,6 +16975,7 @@ Save this key \u2014 it cannot be retrieved again. Pass it via the apiKey option
 };
 export {
   AgentIdentityModule,
+  AgentSyncError,
   BasisAPI,
   BasisClient,
   FactoryModule,

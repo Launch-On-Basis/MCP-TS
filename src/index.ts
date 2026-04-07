@@ -205,7 +205,7 @@ const TOOLS = [
   // ── Module 6: Portfolio & Data ──────────────────────────
   { name: "get_balances", description: "Wallet balances — USDB, STASIS, wSTASIS, factory tokens.", inputSchema: { type: "object" as const, properties: {} } },
   { name: "get_market_list", description: "List prediction markets.", inputSchema: { type: "object" as const, properties: { status: { type: "string", enum: ["active", "awaiting_proposal", "resolved"] }, limit: { type: "number" } } } },
-  { name: "get_token_list", description: "List/search tokens.", inputSchema: { type: "object" as const, properties: { search: { type: "string" }, limit: { type: "number" } } } },
+  { name: "get_token_list", description: "List/search tokens. Filter by creator with dev param.", inputSchema: { type: "object" as const, properties: { search: { type: "string" }, dev: { type: "string", description: "Filter by creator wallet address" }, limit: { type: "number" } } } },
   { name: "get_token_detail", description: "Get full detail for a single token.", inputSchema: { type: "object" as const, properties: { token: { type: "string", description: "Token address" } }, required: ["token"] } },
   { name: "get_price_history", description: "OHLC candles for a token.", inputSchema: { type: "object" as const, properties: { token: { type: "string" }, interval: { type: "string", enum: ["1m", "5m", "15m", "1h", "4h", "1d"] }, limit: { type: "number" } }, required: ["token"] } },
   { name: "get_trade_history", description: "Recent trades for a token.", inputSchema: { type: "object" as const, properties: { token: { type: "string" }, type: { type: "string", enum: ["buy", "sell", "leverage_buy", "leverage_sell"] }, limit: { type: "number" } }, required: ["token"] } },
@@ -301,7 +301,7 @@ const TOOLS = [
   { name: "set_agent_uri", description: "Update your agent's metadata URI.", inputSchema: { type: "object" as const, properties: { agent_id: { type: "number" }, uri: { type: "string" } }, required: ["agent_id", "uri"] } },
 
   // ── Profile & Social ───────────────────────────────
-  { name: "update_my_profile", description: "Update your profile. One action per call.", inputSchema: { type: "object" as const, properties: { username: { type: "string", description: "Set username (null to clear)" }, social: { type: "object", properties: { platform: { type: "string" }, handle: { type: "string" } }, description: "Link a social account" }, remove_social: { type: "string", description: "Platform name to unlink" }, toggle_social_public: { type: "string", description: "Platform name to flip public/private" } } } },
+  { name: "update_my_profile", description: "Update your profile. One action per call.", inputSchema: { type: "object" as const, properties: { username: { type: "string", description: "Set username (null to clear)" }, avatar: { type: "string", description: "Set avatar URL (IPFS/Pinata URL, or null to clear)" }, social: { type: "object", properties: { platform: { type: "string" }, handle: { type: "string" } }, description: "Link a social account" }, remove_social: { type: "string", description: "Platform name to unlink" }, toggle_social_public: { type: "string", description: "Platform name to flip public/private" } } } },
   { name: "get_public_profile_referrals", description: "Get referral data for a wallet.", inputSchema: { type: "object" as const, properties: { wallet: { type: "string" } }, required: ["wallet"] } },
   { name: "get_verified_tweets", description: "Get your verified tweets.", inputSchema: { type: "object" as const, properties: {} } },
   { name: "submit_bug_report", description: "Submit a bug report.", inputSchema: { type: "object" as const, properties: { title: { type: "string" }, description: { type: "string" }, severity: { type: "string", enum: ["critical", "high", "medium", "low"] }, category: { type: "string", enum: ["sdk", "contracts", "api", "frontend", "docs"] }, evidence: { type: "string" } }, required: ["title", "description", "severity", "category"] } },
@@ -354,7 +354,8 @@ const TOOLS = [
   { name: "create_project_comment", description: "Comment on a token project.", inputSchema: { type: "object" as const, properties: { project_id: { type: "number" }, content: { type: "string" } }, required: ["project_id", "content"] } },
   { name: "delete_project_comment", description: "Delete a project comment.", inputSchema: { type: "object" as const, properties: { comment_id: { type: "number" } }, required: ["comment_id"] } },
   { name: "get_project_comments", description: "Get comments on a project.", inputSchema: { type: "object" as const, properties: { project_id: { type: "number" }, limit: { type: "number" } }, required: ["project_id"] } },
-  { name: "upload_image_from_url", description: "Upload an image from URL to Basis.", inputSchema: { type: "object" as const, properties: { image_url: { type: "string" }, contract_address: { type: "string" } }, required: ["image_url"] } },
+  { name: "upload_image_from_url", description: "Upload an image from URL to Basis (Pinata/IPFS). Use purpose='avatar' for profile pics, 'token' for token/market images (requires contract_address).", inputSchema: { type: "object" as const, properties: { image_url: { type: "string" }, contract_address: { type: "string", description: "Required for purpose='token'" }, purpose: { type: "string", enum: ["token", "avatar"], description: "Default: 'token'" } }, required: ["image_url"] } },
+  { name: "set_avatar", description: "Upload image and set as profile avatar in one step.", inputSchema: { type: "object" as const, properties: { image_url: { type: "string", description: "Image URL to upload and set as avatar" } }, required: ["image_url"] } },
 
   // ── Utility ────────────────────────────────────────
   { name: "claim_faucet", description: "Claim daily USDB from faucet (up to 600/day based on eligibility signals, capped at 500 per claim). Requires SIWE session. Check get_faucet_status first.", inputSchema: { type: "object" as const, properties: { referrer: { type: "string", description: "Referrer wallet address (optional)" } } } },
@@ -800,7 +801,7 @@ async function handleTool(name: string, args: any): Promise<any> {
       }
 
       case "get_market_list": { return ok((await client.api.getTokens({ isPrediction: true, limit: args.limit || 20 })).data); }
-      case "get_token_list": { return ok((await client.api.getTokens({ search: args.search, limit: args.limit || 20 })).data); }
+      case "get_token_list": { return ok((await client.api.getTokens({ search: args.search, dev: args.dev, limit: args.limit || 20 })).data); }
       case "get_token_detail": { return ok((await client.api.getToken(args.token)).data); }
       case "get_price_history": { const r = await client.api.getCandles(resolveToken(args.token), { interval: args.interval || "1h", limit: args.limit || 100 }); return ok({ token: args.token, interval: args.interval || "1h", candles: r.data }); }
       case "get_trade_history": { return ok((await client.api.getTrades(resolveToken(args.token), { type: args.type, limit: args.limit || 20 })).data); }
@@ -960,6 +961,7 @@ async function handleTool(name: string, args: any): Promise<any> {
       case "update_my_profile": {
         const payload: any = {};
         if (args.username !== undefined) payload.username = args.username;
+        if (args.avatar !== undefined) payload.avatar = args.avatar;
         if (args.social) payload.social = args.social;
         if (args.remove_social) payload.removeSocial = args.remove_social;
         if (args.toggle_social_public) payload.toggleSocialPublic = args.toggle_social_public;
@@ -1061,7 +1063,8 @@ async function handleTool(name: string, args: any): Promise<any> {
       case "create_project_comment": { return ok(await client.api.createComment(args.project_id, args.content, walletAddress)); }
       case "delete_project_comment": { return ok(await client.api.deleteComment(args.comment_id, walletAddress)); }
       case "get_project_comments": { return ok((await client.api.getComments(args.project_id, { limit: args.limit || 20 })).data); }
-      case "upload_image_from_url": { return ok({ url: await client.api.uploadImageFromUrl(args.image_url, args.contract_address) }); }
+      case "upload_image_from_url": { return ok({ url: await client.api.uploadImageFromUrl(args.image_url, args.contract_address, args.purpose || "token") }); }
+      case "set_avatar": { return ok(await (client.api as any).setAvatar(args.image_url)); }
 
       // ── Utility ────────────────────────────────────────
 
