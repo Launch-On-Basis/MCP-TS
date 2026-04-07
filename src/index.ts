@@ -14,6 +14,8 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { BasisClient } from "basis-sdk-js";
 import { parseUnits, formatUnits, parseAbi, getAddress, type Address } from "viem";
+import { readFileSync } from "fs";
+import { basename } from "path";
 
 // ============================================================
 // Constants (fallback — overridden by launchonbasis.com/contracts.json on startup)
@@ -356,6 +358,7 @@ const TOOLS = [
   { name: "get_project_comments", description: "Get comments on a project.", inputSchema: { type: "object" as const, properties: { project_id: { type: "number" }, limit: { type: "number" } }, required: ["project_id"] } },
   { name: "upload_image_from_url", description: "Upload an image from URL to Basis (Pinata/IPFS). Use purpose='avatar' for profile pics, 'token' for token/market images (requires contract_address).", inputSchema: { type: "object" as const, properties: { image_url: { type: "string" }, contract_address: { type: "string", description: "Required for purpose='token'" }, purpose: { type: "string", enum: ["token", "avatar"], description: "Default: 'token'" } }, required: ["image_url"] } },
   { name: "set_avatar", description: "Upload image and set as profile avatar in one step.", inputSchema: { type: "object" as const, properties: { image_url: { type: "string", description: "Image URL to upload and set as avatar" } }, required: ["image_url"] } },
+  { name: "upload_image_from_file", description: "Upload a local image file to Basis (Pinata/IPFS). For agents/Claude Code with local file access.", inputSchema: { type: "object" as const, properties: { file_path: { type: "string", description: "Absolute path to image file" }, purpose: { type: "string", enum: ["token", "avatar"], description: "Default: 'token'" }, contract_address: { type: "string", description: "Required for purpose='token'" } }, required: ["file_path"] } },
 
   // ── Utility ────────────────────────────────────────
   { name: "claim_faucet", description: "Claim daily USDB from faucet (up to 600/day based on eligibility signals, capped at 500 per claim). Requires SIWE session. Check get_faucet_status first.", inputSchema: { type: "object" as const, properties: { referrer: { type: "string", description: "Referrer wallet address (optional)" } } } },
@@ -1065,6 +1068,12 @@ async function handleTool(name: string, args: any): Promise<any> {
       case "get_project_comments": { return ok((await client.api.getComments(args.project_id, { limit: args.limit || 20 })).data); }
       case "upload_image_from_url": { return ok({ url: await client.api.uploadImageFromUrl(args.image_url, args.contract_address, args.purpose || "token") }); }
       case "set_avatar": { return ok(await (client.api as any).setAvatar(args.image_url)); }
+      case "upload_image_from_file": {
+        const buf = readFileSync(args.file_path);
+        const filename = basename(args.file_path);
+        const result = await client.api.uploadImage(buf, filename, args.purpose || "token", args.contract_address);
+        return ok(result);
+      }
 
       // ── Utility ────────────────────────────────────────
 

@@ -11,6 +11,8 @@ const stdio_js_1 = require("@modelcontextprotocol/sdk/server/stdio.js");
 const types_js_1 = require("@modelcontextprotocol/sdk/types.js");
 const basis_sdk_js_1 = require("basis-sdk-js");
 const viem_1 = require("viem");
+const fs_1 = require("fs");
+const path_1 = require("path");
 // ============================================================
 // Constants (fallback — overridden by launchonbasis.com/contracts.json on startup)
 // ============================================================
@@ -339,6 +341,7 @@ const TOOLS = [
     { name: "get_project_comments", description: "Get comments on a project.", inputSchema: { type: "object", properties: { project_id: { type: "number" }, limit: { type: "number" } }, required: ["project_id"] } },
     { name: "upload_image_from_url", description: "Upload an image from URL to Basis (Pinata/IPFS). Use purpose='avatar' for profile pics, 'token' for token/market images (requires contract_address).", inputSchema: { type: "object", properties: { image_url: { type: "string" }, contract_address: { type: "string", description: "Required for purpose='token'" }, purpose: { type: "string", enum: ["token", "avatar"], description: "Default: 'token'" } }, required: ["image_url"] } },
     { name: "set_avatar", description: "Upload image and set as profile avatar in one step.", inputSchema: { type: "object", properties: { image_url: { type: "string", description: "Image URL to upload and set as avatar" } }, required: ["image_url"] } },
+    { name: "upload_image_from_file", description: "Upload a local image file to Basis (Pinata/IPFS). For agents/Claude Code with local file access.", inputSchema: { type: "object", properties: { file_path: { type: "string", description: "Absolute path to image file" }, purpose: { type: "string", enum: ["token", "avatar"], description: "Default: 'token'" }, contract_address: { type: "string", description: "Required for purpose='token'" } }, required: ["file_path"] } },
     // ── Utility ────────────────────────────────────────
     { name: "claim_faucet", description: "Claim daily USDB from faucet (up to 600/day based on eligibility signals, capped at 500 per claim). Requires SIWE session. Check get_faucet_status first.", inputSchema: { type: "object", properties: { referrer: { type: "string", description: "Referrer wallet address (optional)" } } } },
     { name: "get_faucet_status", description: "Check faucet eligibility — signals, claimable amount, cooldown timer. Must be authenticated.", inputSchema: { type: "object", properties: {} } },
@@ -1282,6 +1285,12 @@ async function handleTool(name, args) {
             }
             case "set_avatar": {
                 return ok(await client.api.setAvatar(args.image_url));
+            }
+            case "upload_image_from_file": {
+                const buf = (0, fs_1.readFileSync)(args.file_path);
+                const filename = (0, path_1.basename)(args.file_path);
+                const result = await client.api.uploadImage(buf, filename, args.purpose || "token", args.contract_address);
+                return ok(result);
             }
             // ── Utility ────────────────────────────────────────
             case "claim_faucet": {
