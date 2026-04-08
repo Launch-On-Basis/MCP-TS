@@ -34,7 +34,7 @@
   "license": "Elastic-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Launch-On-Basis/basis-sdk.git"
+    "url": "https://github.com/Launch-On-Basis/SDK-TS.git"
   },
   "homepage": "https://launchonbasis.com",
   "dependencies": {

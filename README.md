@@ -140,7 +140,7 @@ Open a new chat and ask:
 | `claim_liquidation` | write | Claim remaining collateral from expired loan. |
 | `partial_loan_sell` | write | Partially sell hub loan collateral. |
 
-### Portfolio & Data (21)
+### Portfolio & Data (20)
 | Tool | Type | Description |
 |------|------|-------------|
 | `get_balances` | read | Wallet balances (USDB, STASIS, wSTASIS, factory tokens). |
@@ -163,7 +163,6 @@ Open a new chat and ask:
 | `get_market_events` | read | Prediction market event history. |
 | `get_market_liquidity` | read | Market liquidity data. |
 | `remove_whitelist` | write | Remove wallet from whitelist. |
-| `update_my_profile` | write | Update username, avatar, or social links. |
 
 ### Agent Identity (8)
 | Tool | Type | Description |
@@ -291,9 +290,10 @@ Open a new chat and ask:
 | `convert_to_assets` | read | wSTASIS shares to STASIS value. |
 | `get_total_vault_assets` | read | Total vault TVL. |
 
-### Extras (10)
+### Extras (11)
 | Tool | Type | Description |
 |------|------|-------------|
+| `update_my_profile` | write | Update username, avatar, or social links. |
 | `get_public_profile_referrals` | read | Referral data for a wallet. |
 | `get_verified_tweets` | read | Your verified tweets. |
 | `submit_bug_report` | write | Submit a bug report. |

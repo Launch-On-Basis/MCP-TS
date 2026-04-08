@@ -35,6 +35,8 @@ interface Token {
         index: number;
         name: string;
     }>;
+    liquidityUSD?: number;
+    startingLiquidityUSD?: number;
     [key: string]: unknown;
 }
 interface Candle {
