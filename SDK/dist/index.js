@@ -2899,6 +2899,9 @@ var FactoryModule = class {
    * @param options.imageFile - raw image data as Buffer or Blob (alternative to imageUrl)
    */
   async createTokenWithMetadata(options) {
+    if (!options.imageUrl && !options.imageFile) {
+      throw new Error("Either imageUrl or imageFile is required.");
+    }
     const createResult = await this.createToken(
       options.symbol,
       options.name,
@@ -2922,9 +2925,6 @@ var FactoryModule = class {
       tokenAddress = (0, import_viem.getAddress)("0x" + tokenCreatedLog.topics[1].slice(26));
     } else {
       throw new Error("Could not extract token address from creation logs.");
-    }
-    if (!options.imageUrl && !options.imageFile) {
-      throw new Error("Either imageUrl or imageFile is required.");
     }
     let imageUrl;
     if (options.imageFile) {
@@ -5773,6 +5773,12 @@ var PredictionMarketsModule = class {
       args: [maintoken]
     });
     const factoryAddress = ecoData.factory ?? ecoData[0];
+    const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+    if (!factoryAddress || factoryAddress === ZERO_ADDRESS) {
+      throw new Error(
+        `Token ${maintoken} is not a registered ecosystem token \u2014 cannot create a market under it. Use an existing ecosystem token address as maintoken.`
+      );
+    }
     const feeAmount = await this.client.publicClient.readContract({
       address: factoryAddress,
       abi: ATokenFactory_default.abi,
@@ -5791,7 +5797,6 @@ var PredictionMarketsModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
@@ -5804,12 +5809,16 @@ var PredictionMarketsModule = class {
    * @param options.seedAmount - USDB amount in wei (18 decimals)
    */
   async createMarketWithMetadata(options) {
+    if (!options.imageUrl && !options.imageFile) {
+      throw new Error("Either imageUrl or imageFile is required.");
+    }
+    const maintoken = options.maintoken ?? this.client.mainTokenAddress;
     const createResult = await this.createMarket(
       options.marketName,
       options.symbol,
       options.endTime,
       options.optionNames,
-      options.maintoken,
+      maintoken,
       options.frozen ?? false,
       options.bonding ?? 0n,
       options.seedAmount ?? 0n
@@ -5826,9 +5835,6 @@ var PredictionMarketsModule = class {
       marketTokenAddress = (0, import_viem3.getAddress)("0x" + marketLog.topics[1].slice(26));
     } else {
       throw new Error("Could not extract market address from creation logs.");
-    }
-    if (!options.imageUrl && !options.imageFile) {
-      throw new Error("Either imageUrl or imageFile is required.");
     }
     let imageUrl;
     if (options.imageFile) {
@@ -13563,6 +13569,12 @@ var PrivateMarketsModule = class {
       args: [maintoken]
     });
     const factoryAddress = ecoData.factory ?? ecoData[0];
+    const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+    if (!factoryAddress || factoryAddress === ZERO_ADDRESS) {
+      throw new Error(
+        `Token ${maintoken} is not a registered ecosystem token \u2014 cannot create a market under it. Use an existing ecosystem token address as maintoken.`
+      );
+    }
     const feeAmount = await this.client.publicClient.readContract({
       address: factoryAddress,
       abi: ATokenFactory_default.abi,
@@ -13581,7 +13593,6 @@ var PrivateMarketsModule = class {
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
-    await this._syncTx(hash);
     return { hash, receipt };
   }
   /**
@@ -13594,12 +13605,16 @@ var PrivateMarketsModule = class {
    * @param options.seedAmount - USDB amount in wei (18 decimals)
    */
   async createMarketWithMetadata(options) {
+    if (!options.imageUrl && !options.imageFile) {
+      throw new Error("Either imageUrl or imageFile is required.");
+    }
+    const maintoken = options.maintoken ?? this.client.mainTokenAddress;
     const createResult = await this.createMarket(
       options.marketName,
       options.symbol,
       options.endTime,
       options.optionNames,
-      options.maintoken,
+      maintoken,
       options.privateEvent ?? true,
       options.frozen ?? false,
       options.bonding ?? 0n,
@@ -13617,9 +13632,6 @@ var PrivateMarketsModule = class {
       marketTokenAddress = (0, import_viem4.getAddress)("0x" + marketLog.topics[1].slice(26));
     } else {
       throw new Error("Could not extract market address from creation logs.");
-    }
-    if (!options.imageUrl && !options.imageFile) {
-      throw new Error("Either imageUrl or imageFile is required.");
     }
     let imageUrl;
     if (options.imageFile) {
@@ -16454,27 +16466,26 @@ var AgentIdentityModule = class {
     return balance > 0n;
   }
   /**
-   * Look up the agentId for a wallet by scanning Registered events on-chain.
-   * Returns the agentId or null if not found.
+   * Extract the agentId from a registration transaction receipt.
+   * Parses the Registered event emitted by the Identity Registry.
    */
-  async getAgentIdFromChain(wallet) {
-    const logs = await this.client.publicClient.getLogs({
-      address: this.registryAddress,
-      event: {
-        type: "event",
-        name: "Registered",
-        inputs: [
-          { indexed: true, name: "agentId", type: "uint256" },
-          { indexed: false, name: "agentURI", type: "string" },
-          { indexed: true, name: "owner", type: "address" }
-        ]
-      },
-      args: { owner: wallet },
-      fromBlock: 0n,
-      toBlock: "latest"
-    });
-    if (logs.length === 0) return null;
-    return logs[logs.length - 1].args.agentId;
+  async getAgentIdFromTx(txHash) {
+    const receipt = await this.client.publicClient.getTransactionReceipt({ hash: txHash });
+    for (const log of receipt.logs) {
+      if (log.address.toLowerCase() !== this.registryAddress.toLowerCase()) continue;
+      try {
+        const decoded = (0, import_viem5.decodeEventLog)({
+          abi: identityRegistryAbi,
+          data: log.data,
+          topics: log.topics
+        });
+        if (decoded.eventName === "Registered") {
+          return decoded.args.agentId;
+        }
+      } catch {
+      }
+    }
+    return null;
   }
   /**
    * Register the current wallet as an ERC-8004 agent.
@@ -16539,9 +16550,13 @@ var AgentIdentityModule = class {
    * 2. If not, register on-chain
    * 3. Save to backend API
    *
+   * If already registered on-chain but not synced to the API, pass
+   * the original registration txHash to recover the agentId from
+   * the transaction receipt.
+   *
    * Returns the agentId.
    */
-  async registerAndSync(config) {
+  async registerAndSync(config, txHash) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
       throw new Error("Wallet required to register as agent.");
     }
@@ -16553,9 +16568,14 @@ var AgentIdentityModule = class {
       if (apiAgent && apiAgent.isAgent) {
         return BigInt(apiAgent.agent.agentId);
       }
-      const chainAgentId = await this.getAgentIdFromChain(address);
+      if (!txHash) {
+        throw new Error(
+          "Already registered on-chain but not synced to API. Provide your registration txHash to recover: registerAndSync(config, txHash)"
+        );
+      }
+      const chainAgentId = await this.getAgentIdFromTx(txHash);
       if (chainAgentId === null) {
-        throw new Error("Agent shows as registered (balanceOf > 0) but no Registered event found on-chain");
+        throw new Error("Could not parse agentId from transaction receipt");
       }
       await this.syncToApi(address, chainAgentId, config);
       const synced = await this.lookupFromApi(address);

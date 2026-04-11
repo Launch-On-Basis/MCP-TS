@@ -25,10 +25,10 @@ export declare class AgentIdentityModule {
      */
     isRegistered(wallet: Address): Promise<boolean>;
     /**
-     * Look up the agentId for a wallet by scanning Registered events on-chain.
-     * Returns the agentId or null if not found.
+     * Extract the agentId from a registration transaction receipt.
+     * Parses the Registered event emitted by the Identity Registry.
      */
-    getAgentIdFromChain(wallet: Address): Promise<bigint | null>;
+    getAgentIdFromTx(txHash: `0x${string}`): Promise<bigint | null>;
     /**
      * Register the current wallet as an ERC-8004 agent.
      * Returns the agentId. Always syncs to backend — throws on sync failure.
@@ -45,7 +45,7 @@ export declare class AgentIdentityModule {
      *
      * Returns the agentId.
      */
-    registerAndSync(config?: AgentConfig): Promise<bigint>;
+    registerAndSync(config?: AgentConfig, txHash?: `0x${string}`): Promise<bigint>;
     /**
      * Sync agent registration to the backend API.
      */

@@ -224,7 +224,8 @@ const TOOLS = [
     { name: "get_market_events", description: "Get prediction market event history.", inputSchema: { type: "object", properties: { action: { type: "string" }, market_token: { type: "string" }, limit: { type: "number" } } } },
     { name: "get_market_liquidity", description: "Get liquidity data for a prediction market.", inputSchema: { type: "object", properties: { market: { type: "string" }, outcome_id: { type: "string" }, limit: { type: "number" } }, required: ["market"] } },
     // ── Module 7: Agent Identity ───────────────────────
-    { name: "register_agent", description: "Register as AI agent on-chain (ERC-8004).", inputSchema: { type: "object", properties: { name: { type: "string", description: "Agent display name" }, description: { type: "string", description: "Agent description" }, capabilities: { type: "array", items: { type: "string" } } }, required: ["name"] } },
+    { name: "register_agent", description: "Register as AI agent on-chain (ERC-8004).", inputSchema: { type: "object", properties: { name: { type: "string", description: "Agent display name" }, description: { type: "string", description: "Agent description" }, capabilities: { type: "array", items: { type: "string" } }, tx_hash: { type: "string", description: "Optional: recover agent ID from a previous registration tx" } }, required: ["name"] } },
+    { name: "get_agent_id_from_tx", description: "Get agent ID from a registration transaction hash (recovery tool).", inputSchema: { type: "object", properties: { tx_hash: { type: "string" } }, required: ["tx_hash"] } },
     { name: "is_agent_registered", description: "Check if a wallet is registered as an agent.", inputSchema: { type: "object", properties: { wallet: { type: "string", description: "Wallet to check (default: yours)" } } } },
     // ── Additional reads ───────────────────────────────────
     { name: "get_final_outcome", description: "Get the resolved outcome of a finalized market.", inputSchema: { type: "object", properties: { market: { type: "string" } }, required: ["market"] } },
@@ -892,8 +893,12 @@ async function handleTool(name, args) {
             }
             // ── Module 7: Agent Identity ────────────────────────
             case "register_agent": {
-                const agentId = await client.agent.registerAndSync({ name: args.name, description: args.description, capabilities: args.capabilities });
+                const agentId = await client.agent.registerAndSync({ name: args.name, description: args.description, capabilities: args.capabilities }, args.tx_hash);
                 return ok({ agent_id: Number(agentId), message: "Agent registered on-chain (ERC-8004)" });
+            }
+            case "get_agent_id_from_tx": {
+                const agentId = await client.agent.getAgentIdFromTx(args.tx_hash);
+                return ok({ agent_id: Number(agentId), tx_hash: args.tx_hash });
             }
             case "is_agent_registered": {
                 const w = (args.wallet || walletAddress);
