@@ -2,7 +2,7 @@
 
 # Basis MCP Server
 
-179 tools for the Basis protocol — trading, token creation, prediction markets, staking, loans, vesting, order books, taxes, social, and more. Works with Claude Desktop, Claude Code, and any MCP-compatible client.
+180 tools for the Basis protocol (on BNB Smart Chain) — trading, token creation, prediction markets, staking, loans, vesting, order books, taxes, social, and more. Works with Claude Desktop, Claude Code, and any MCP-compatible client.
 
 The SDK is bundled inside — no separate installation required.
 
@@ -10,7 +10,7 @@ The SDK is bundled inside — no separate installation required.
 
 - [Node.js](https://nodejs.org/) v18 or higher
 - [Claude Desktop](https://claude.ai/download) (or any MCP-compatible client)
-- A BSC wallet private key
+- A BNB Smart Chain wallet private key
 
 ## Quick Start
 
@@ -25,7 +25,7 @@ npm run build
 
 ### 2. Get a private key
 
-You need a BSC wallet private key. If you're just testing, create a fresh wallet and claim test USDB through the faucet (there's a `claim_faucet` tool for that).
+You need a BNB Smart Chain (BSC) wallet private key. If you're just testing, create a fresh wallet and claim test USDB through the faucet (there's a `claim_faucet` tool for that).
 
 ### 3. Add to Claude Desktop
 
@@ -66,10 +66,10 @@ Open a new chat and ask:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `BASIS_PRIVATE_KEY` | Yes | BSC wallet private key (0x-prefixed) |
+| `BASIS_PRIVATE_KEY` | Yes | BNB Smart Chain wallet private key (0x-prefixed) |
 | `BASIS_API_KEY` | No | Basis API key (starts with `bsk_`). Shown once at creation — save it. If omitted, auto-provisioned on first run via SIWE. Required on subsequent runs if a key already exists on the server. |
 
-## Tools (179)
+## Tools (180)
 
 ### Trading (8)
 | Tool | Type | Description |
@@ -164,10 +164,10 @@ Open a new chat and ask:
 | `get_market_liquidity` | read | Market liquidity data. |
 | `remove_whitelist` | write | Remove wallet from whitelist. |
 
-### Agent Identity (8)
+### Agent Identity (9)
 | Tool | Type | Description |
 |------|------|-------------|
-| `register_agent` | write | Register as AI agent on-chain (ERC-8004). |
+| `register_agent` | write | Register as AI agent on-chain (ERC-8004). Optional tx_hash for recovery. |
 | `is_agent_registered` | read | Check if a wallet is a registered agent. |
 | `list_agents` | read | List registered AI agents. |
 | `lookup_agent` | read | Look up agent by wallet. |
@@ -175,6 +175,7 @@ Open a new chat and ask:
 | `get_agent_wallet` | read | Get wallet for an agent ID. |
 | `get_agent_metadata` | read | Get agent metadata by key. |
 | `set_agent_uri` | write | Update agent metadata URI. |
+| `get_agent_id_from_tx` | read | Recover agent ID from a registration tx hash. |
 
 ### Vesting (18)
 | Tool | Type | Description |
