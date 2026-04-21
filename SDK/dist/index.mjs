@@ -8423,11 +8423,27 @@ var VestingModule = class {
   }
   async getFeeAmount() {
     try {
-      return await this.client.publicClient.readContract({
-        address: this.vestingAddress,
-        abi: A_VestingContract_default.abi,
-        functionName: "feeAmount"
-      });
+      const account = this.client.walletClient?.account?.address;
+      const [enabled, amount, whitelisted] = await Promise.all([
+        this.client.publicClient.readContract({
+          address: this.vestingAddress,
+          abi: A_VestingContract_default.abi,
+          functionName: "feeEnabled"
+        }),
+        this.client.publicClient.readContract({
+          address: this.vestingAddress,
+          abi: A_VestingContract_default.abi,
+          functionName: "feeAmount"
+        }),
+        account ? this.client.publicClient.readContract({
+          address: this.vestingAddress,
+          abi: A_VestingContract_default.abi,
+          functionName: "feeWhitelist",
+          args: [account]
+        }) : Promise.resolve(false)
+      ]);
+      if (!enabled || whitelisted) return 0n;
+      return amount;
     } catch {
       return 0n;
     }
