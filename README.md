@@ -2,7 +2,7 @@
 
 # Basis MCP Server
 
-180 tools for the Basis protocol (on BNB Smart Chain) — trading, token creation, prediction markets, staking, loans, vesting, order books, taxes, social, and more. Works with Claude Desktop, Claude Code, and any MCP-compatible client.
+181 tools for the Basis protocol (on BNB Smart Chain) — trading, token creation, prediction markets, staking, loans, vesting, order books, taxes, social, and more. Works with Claude Desktop, Claude Code, and any MCP-compatible client.
 
 The SDK is bundled inside — no separate installation required.
 
@@ -69,7 +69,7 @@ Open a new chat and ask:
 | `BASIS_PRIVATE_KEY` | Yes | BNB Smart Chain wallet private key (0x-prefixed) |
 | `BASIS_API_KEY` | No | Basis API key (starts with `bsk_`). Shown once at creation — save it. If omitted, auto-provisioned on first run via SIWE. Required on subsequent runs if a key already exists on the server. |
 
-## Tools (180)
+## Tools (181)
 
 ### Trading (8)
 | Tool | Type | Description |
@@ -140,7 +140,7 @@ Open a new chat and ask:
 | `claim_liquidation` | write | Claim remaining collateral from expired loan. |
 | `partial_loan_sell` | write | Partially sell hub loan collateral. |
 
-### Portfolio & Data (20)
+### Portfolio & Data (21)
 | Tool | Type | Description |
 |------|------|-------------|
 | `get_balances` | read | Wallet balances (USDB, STASIS, wSTASIS, factory tokens). |
@@ -156,6 +156,7 @@ Open a new chat and ask:
 | `get_public_profile` | read | Public profile for any wallet. |
 | `get_my_projects` | read | Your created tokens and markets. |
 | `get_my_referrals` | read | Your referral data. |
+| `get_my_daily_caps` | read | Today's cap-fill % for `pointCaps` (trading, prediction, creator, positions) and `countCaps` (social_x, social_moltbook). Includes `resetsInSeconds`. |
 | `get_whitelist` | read | View whitelist for a frozen token. |
 | `get_token_comments` | read | Comments on a token. |
 | `get_loan_events` | read | Loan event history. |

@@ -769,6 +769,19 @@ var BasisAPI = class {
     const res = await this.fetchWithAuth("/api/v1/me/referrals");
     return res.json();
   }
+  /**
+   * GET /api/v1/me/daily-caps — today's cap-fill percentages for the
+   * authenticated wallet. Caps reset at 00:00 UTC.
+   *
+   * `pointCaps` always returns the four point-based categories
+   * (trading, prediction, creator, positions); `countCaps` returns the two
+   * count-based social categories (social_x, social_moltbook). Each `percent`
+   * is 0-100, rounded to 1 decimal, clamped at 100.
+   */
+  async getMyDailyCaps() {
+    const res = await this.fetchWithAuth("/api/v1/me/daily-caps");
+    return res.json();
+  }
   // -----------------------------------------------------------------------
   // Reef — public reads (no auth required)
   // -----------------------------------------------------------------------

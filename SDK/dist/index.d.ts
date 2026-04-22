@@ -218,6 +218,18 @@ interface MyReferrals {
     indirectCount: number;
     referrals: ReferralUser[];
 }
+type DailyCapPointCategory = 'trading' | 'prediction' | 'creator' | 'positions';
+type DailyCapCountCategory = 'social_x' | 'social_moltbook';
+interface DailyCapEntry<C extends string = string> {
+    category: C;
+    percent: number;
+}
+interface MyDailyCaps {
+    date: string;
+    resetsInSeconds: number;
+    pointCaps: DailyCapEntry<DailyCapPointCategory>[];
+    countCaps: DailyCapEntry<DailyCapCountCategory>[];
+}
 declare class BasisAPI {
     private client;
     constructor(client: BasisClient);
@@ -721,6 +733,16 @@ declare class BasisAPI {
      * sorted by rank.
      */
     getMyReferrals(): Promise<MyReferrals>;
+    /**
+     * GET /api/v1/me/daily-caps — today's cap-fill percentages for the
+     * authenticated wallet. Caps reset at 00:00 UTC.
+     *
+     * `pointCaps` always returns the four point-based categories
+     * (trading, prediction, creator, positions); `countCaps` returns the two
+     * count-based social categories (social_x, social_moltbook). Each `percent`
+     * is 0-100, rounded to 1 decimal, clamped at 100.
+     */
+    getMyDailyCaps(): Promise<MyDailyCaps>;
     /** GET /api/reef/feed — paginated social feed. */
     getReefFeed(options?: {
         section?: string;
@@ -2419,4 +2441,4 @@ declare class BasisClient {
     }>;
 }
 
-export { type AgentConfig, AgentIdentityModule, AgentSyncError, type ApiKeyInfo, BasisAPI, BasisClient, type BasisClientOptions, type Candle, type Comment, type CursorPagination, FactoryModule, LeverageSimulatorModule, type LiquidityEntry, LoansModule, MarketReaderModule, MarketResolverModule, type MetadataPayload, type MyProfile, type MyProjectItem, type MyProjects, type MyReferrals, type MySocial, type MyStats, type MyXAccount, type Order, OrderBookModule, type Pagination, PredictionMarketsModule, PrivateMarketsModule, type ProjectUpdatePayload, type ReferralUser, StakingModule, TaxesModule, type Token, type Trade, TradingModule, type UpdateProfilePayload, type UpdateProfileResult, VestingModule, type WalletTransaction, type WhitelistEntry };
+export { type AgentConfig, AgentIdentityModule, AgentSyncError, type ApiKeyInfo, BasisAPI, BasisClient, type BasisClientOptions, type Candle, type Comment, type CursorPagination, type DailyCapCountCategory, type DailyCapEntry, type DailyCapPointCategory, FactoryModule, LeverageSimulatorModule, type LiquidityEntry, LoansModule, MarketReaderModule, MarketResolverModule, type MetadataPayload, type MyDailyCaps, type MyProfile, type MyProjectItem, type MyProjects, type MyReferrals, type MySocial, type MyStats, type MyXAccount, type Order, OrderBookModule, type Pagination, PredictionMarketsModule, PrivateMarketsModule, type ProjectUpdatePayload, type ReferralUser, StakingModule, TaxesModule, type Token, type Trade, TradingModule, type UpdateProfilePayload, type UpdateProfileResult, VestingModule, type WalletTransaction, type WhitelistEntry };

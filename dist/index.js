@@ -217,6 +217,7 @@ const TOOLS = [
     { name: "get_public_profile", description: "Get public profile for a wallet.", inputSchema: { type: "object", properties: { wallet: { type: "string" } }, required: ["wallet"] } },
     { name: "get_my_projects", description: "Get your created tokens and markets.", inputSchema: { type: "object", properties: {} } },
     { name: "get_my_referrals", description: "Get your referral data.", inputSchema: { type: "object", properties: {} } },
+    { name: "get_my_daily_caps", description: "Today's cap-fill percentages for the authenticated wallet. Returns { date, resetsInSeconds, pointCaps[4]: trading|prediction|creator|positions, countCaps[2]: social_x|social_moltbook }. Each percent is 0-100. Caps reset at 00:00 UTC.", inputSchema: { type: "object", properties: {} } },
     { name: "get_whitelist", description: "View whitelist for a frozen token.", inputSchema: { type: "object", properties: { token: { type: "string" }, wallet: { type: "string", description: "Filter by wallet" }, limit: { type: "number" } }, required: ["token"] } },
     { name: "get_token_comments", description: "Get comments on a token.", inputSchema: { type: "object", properties: { token: { type: "string" }, limit: { type: "number" } }, required: ["token"] } },
     { name: "get_loan_events", description: "Get loan event history.", inputSchema: { type: "object", properties: { source: { type: "string" }, action: { type: "string" }, limit: { type: "number" } } } },
@@ -872,6 +873,9 @@ async function handleTool(name, args) {
             }
             case "get_my_referrals": {
                 return ok(await client.api.getMyReferrals());
+            }
+            case "get_my_daily_caps": {
+                return ok(await client.api.getMyDailyCaps());
             }
             case "get_whitelist": {
                 return ok((await client.api.getWhitelist(args.token, { wallet: args.wallet, limit: args.limit || 50 })).data);
