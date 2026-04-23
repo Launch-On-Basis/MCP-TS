@@ -5696,6 +5696,17 @@ var PredictionMarketsModule = class {
     await this.client.api.syncTransaction(txHash);
   }
   /**
+   * Returns the contract's minimum seed amount required to create a market,
+   * in USDB wei (18 decimals). `createMarket` will revert if `seedAmount < minSeed`.
+   */
+  async getMinSeed() {
+    return this.client.publicClient.readContract({
+      address: this.marketTradingAddress,
+      abi: AMarketTrading_default.abi,
+      functionName: "minSeed"
+    });
+  }
+  /**
    * Helper to approve tokens for the MarketTrading contract
    */
   async approveIfNeeded(tokenAddress, amount) {
@@ -5728,17 +5739,29 @@ var PredictionMarketsModule = class {
     if (!this.client.walletClient || !this.client.walletClient.account) {
       throw new Error("Stateful initialization (walletClient) is required for write methods.");
     }
-    const ecoData = await this.client.publicClient.readContract({
-      address: this.marketTradingAddress,
-      abi: AMarketTrading_default.abi,
-      functionName: "ecosystems",
-      args: [maintoken]
-    });
+    const [ecoData, minSeed] = await Promise.all([
+      this.client.publicClient.readContract({
+        address: this.marketTradingAddress,
+        abi: AMarketTrading_default.abi,
+        functionName: "ecosystems",
+        args: [maintoken]
+      }),
+      this.client.publicClient.readContract({
+        address: this.marketTradingAddress,
+        abi: AMarketTrading_default.abi,
+        functionName: "minSeed"
+      })
+    ]);
     const factoryAddress = ecoData.factory ?? ecoData[0];
     const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
     if (!factoryAddress || factoryAddress === ZERO_ADDRESS) {
       throw new Error(
         `Token ${maintoken} is not a registered ecosystem token \u2014 cannot create a market under it. Use an existing ecosystem token address as maintoken.`
+      );
+    }
+    if (seedAmount < minSeed) {
+      throw new Error(
+        `seedAmount (${seedAmount}) is below the contract minimum (${minSeed} wei = ${Number(minSeed) / 1e18} USDB). Pass a larger seedAmount.`
       );
     }
     const feeAmount = await this.client.publicClient.readContract({
@@ -6786,6 +6809,73 @@ var ALOAN_HUB_default = {
   deployedLinkReferences: {}
 };
 
+// src/abis/IMAIN_CORE.json
+var IMAIN_CORE_default = {
+  _format: "hh-sol-artifact-1",
+  contractName: "IMAIN_CORE",
+  sourceName: "contracts/STAKING.sol",
+  abi: [
+    {
+      inputs: [
+        {
+          internalType: "address",
+          name: "user",
+          type: "address"
+        },
+        {
+          internalType: "uint256",
+          name: "loanId",
+          type: "uint256"
+        },
+        {
+          internalType: "uint256",
+          name: "numberOfDays",
+          type: "uint256"
+        },
+        {
+          internalType: "bool",
+          name: "isLeverage",
+          type: "bool"
+        },
+        {
+          internalType: "bool",
+          name: "payInUSDC",
+          type: "bool"
+        },
+        {
+          internalType: "bool",
+          name: "refinance",
+          type: "bool"
+        }
+      ],
+      name: "ExtensionEligibility",
+      outputs: [
+        {
+          internalType: "bool",
+          name: "possible",
+          type: "bool"
+        },
+        {
+          internalType: "uint256",
+          name: "fee",
+          type: "uint256"
+        },
+        {
+          internalType: "uint256",
+          name: "extraOut",
+          type: "uint256"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    }
+  ],
+  bytecode: "0x",
+  deployedBytecode: "0x",
+  linkReferences: {},
+  deployedLinkReferences: {}
+};
+
 // src/modules/Loans.ts
 var LoansModule = class {
   client;
@@ -6884,15 +6974,26 @@ var LoansModule = class {
     if (!this.client.walletClient || !this.client.walletClient.account) {
       throw new Error("Stateful initialization (walletClient) is required for write methods.");
     }
+    const user = this.client.walletClient.account.address;
     if (payInStable) {
-      const usdbBalance = await this.client.publicClient.readContract({
-        address: this.client.usdbAddress,
-        abi: IERC20_default.abi,
-        functionName: "balanceOf",
-        args: [this.client.walletClient.account.address]
+      const userLoan = await this.client.publicClient.readContract({
+        address: this.loanHubAddress,
+        abi: ALOAN_HUB_default.abi,
+        functionName: "userLoans",
+        args: [user, hubId]
       });
-      if (usdbBalance > 0n) {
-        await this.approveIfNeeded(this.client.usdbAddress, this.loanHubAddress, usdbBalance);
+      const [ecosystem, coreLoanId] = userLoan;
+      const eligibility = await this.client.publicClient.readContract({
+        address: ecosystem,
+        abi: IMAIN_CORE_default.abi,
+        functionName: "ExtensionEligibility",
+        args: [this.loanHubAddress, coreLoanId, addDays, false, true, refinance]
+      });
+      const possible = eligibility[0];
+      const fee = eligibility[1];
+      if (!possible) throw new Error("Extension not possible under current loan state.");
+      if (fee > 0n) {
+        await this.approveIfNeeded(this.client.usdbAddress, this.loanHubAddress, fee);
       }
     }
     const { request } = await this.client.publicClient.simulateContract({
@@ -8554,20 +8655,57 @@ var VestingModule = class {
   }
   /**
    * Repays a loan taken on a vesting schedule.
-   * Auto-approves the borrowed token (USDB) to the vesting contract.
+   *
+   * Auto-approves the exact debt of the borrowed token to the vesting
+   * contract. Reads `vestingSchedules(id).ecosystem` and
+   * `ecosystems(maintoken).mainpair` to discover the borrow token
+   * (typically USDB but ecosystem-defined), then reads the loan's
+   * `fullAmount` from the loan hub. If the underlying loan is no longer
+   * active (already repaid / liquidated), no approval is performed —
+   * the contract handles cleanup paths without a transferFrom.
    */
   async repayLoanOnVesting(vestingId) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
       throw new Error("Stateful initialization (walletClient) is required for write methods.");
     }
-    const usdbBalance = await this.client.publicClient.readContract({
-      address: this.client.usdbAddress,
-      abi: IERC20_default.abi,
-      functionName: "balanceOf",
-      args: [this.client.walletClient.account.address]
+    const activeLoanId = await this.client.publicClient.readContract({
+      address: this.vestingAddress,
+      abi: A_VestingContract_default.abi,
+      functionName: "getActiveLoan",
+      args: [vestingId]
     });
-    if (usdbBalance > 0n) {
-      await this.approveIfNeeded(this.client.usdbAddress, this.vestingAddress, usdbBalance);
+    if (activeLoanId === 0n) {
+      throw new Error("No active loan on this vesting schedule.");
+    }
+    const schedule = await this.client.publicClient.readContract({
+      address: this.vestingAddress,
+      abi: A_VestingContract_default.abi,
+      functionName: "vestingSchedules",
+      args: [vestingId]
+    });
+    const ecosystem = schedule.ecosystem ?? schedule[3];
+    const eco = await this.client.publicClient.readContract({
+      address: this.vestingAddress,
+      abi: A_VestingContract_default.abi,
+      functionName: "ecosystems",
+      args: [ecosystem]
+    });
+    const borrowedToken = eco[2];
+    const loanHubAddress = await this.client.publicClient.readContract({
+      address: this.vestingAddress,
+      abi: A_VestingContract_default.abi,
+      functionName: "LOAN"
+    });
+    const details = await this.client.publicClient.readContract({
+      address: loanHubAddress,
+      abi: ALOAN_HUB_default.abi,
+      functionName: "getUserLoanDetails",
+      args: [this.vestingAddress, activeLoanId]
+    });
+    const isActive = details.active ?? details[12];
+    const fullAmount = details.fullAmount ?? details[7];
+    if (isActive && fullAmount > 0n) {
+      await this.approveIfNeeded(borrowedToken, this.vestingAddress, fullAmount);
     }
     const { request } = await this.client.publicClient.simulateContract({
       account: this.client.walletClient.account,
@@ -9886,6 +10024,24 @@ var StakingModule = class {
   async _syncTx(txHash) {
     await this.client.api.syncTransaction(txHash);
   }
+  /** Reads the caller's active staking loan: { hubId, loanHubAddress }. Throws if none. */
+  async _getActiveStakingLoan(user) {
+    const vault = await this.client.publicClient.readContract({
+      address: this.stakingAddress,
+      abi: AStasisVault_default.abi,
+      functionName: "userVaults",
+      args: [user]
+    });
+    const hubId = vault[2];
+    const hasActiveLoan = vault[3];
+    if (!hasActiveLoan) throw new Error("No active staking loan for this wallet.");
+    const loanHubAddress = await this.client.publicClient.readContract({
+      address: this.stakingAddress,
+      abi: AStasisVault_default.abi,
+      functionName: "loanHub"
+    });
+    return { hubId, loanHubAddress };
+  }
   async approveIfNeeded(tokenAddress, spender, amount) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
       throw new Error("Wallet account is required for approval.");
@@ -10017,20 +10173,25 @@ var StakingModule = class {
     return { hash, receipt };
   }
   /**
-   * Repays the active staking loan. Auto-approves USDB to the staking contract.
+   * Repays the active staking loan. Auto-approves the exact USDB debt
+   * to the staking contract (read from the loan hub). Throws if the
+   * caller has no active staking loan.
    */
   async repay() {
     if (!this.client.walletClient || !this.client.walletClient.account) {
       throw new Error("Stateful initialization (walletClient) is required for write methods.");
     }
-    const usdbBalance = await this.client.publicClient.readContract({
-      address: this.client.usdbAddress,
-      abi: IERC20_default.abi,
-      functionName: "balanceOf",
-      args: [this.client.walletClient.account.address]
+    const user = this.client.walletClient.account.address;
+    const { hubId, loanHubAddress } = await this._getActiveStakingLoan(user);
+    const details = await this.client.publicClient.readContract({
+      address: loanHubAddress,
+      abi: ALOAN_HUB_default.abi,
+      functionName: "getUserLoanDetails",
+      args: [this.stakingAddress, hubId]
     });
-    if (usdbBalance > 0n) {
-      await this.approveIfNeeded(this.client.usdbAddress, this.stakingAddress, usdbBalance);
+    const fullAmount = details.fullAmount ?? details[7];
+    if (fullAmount > 0n) {
+      await this.approveIfNeeded(this.client.usdbAddress, this.stakingAddress, fullAmount);
     }
     const { request } = await this.client.publicClient.simulateContract({
       account: this.client.walletClient.account,
@@ -10044,8 +10205,9 @@ var StakingModule = class {
     return { hash, receipt };
   }
   /**
-   * Extends the active staking loan.
-   * @param daysToAdd - integer, minimum 10
+   * Extends the active staking loan. When `payInUSDB` is true, auto-approves
+   * the exact extension fee (read from the ecosystem's ExtensionEligibility).
+   * @param daysToAdd - integer, minimum 10 (or 0 with refinance = true)
    * @param payInUSDB - whether to pay extension fee in USDB
    * @param refinance - whether to refinance the loan
    */
@@ -10053,15 +10215,27 @@ var StakingModule = class {
     if (!this.client.walletClient || !this.client.walletClient.account) {
       throw new Error("Stateful initialization (walletClient) is required for write methods.");
     }
+    const user = this.client.walletClient.account.address;
     if (payInUSDB) {
-      const usdbBalance = await this.client.publicClient.readContract({
-        address: this.client.usdbAddress,
-        abi: IERC20_default.abi,
-        functionName: "balanceOf",
-        args: [this.client.walletClient.account.address]
+      const { hubId, loanHubAddress } = await this._getActiveStakingLoan(user);
+      const userLoan = await this.client.publicClient.readContract({
+        address: loanHubAddress,
+        abi: ALOAN_HUB_default.abi,
+        functionName: "userLoans",
+        args: [this.stakingAddress, hubId]
       });
-      if (usdbBalance > 0n) {
-        await this.approveIfNeeded(this.client.usdbAddress, this.stakingAddress, usdbBalance);
+      const [ecosystem, coreLoanId] = userLoan;
+      const eligibility = await this.client.publicClient.readContract({
+        address: ecosystem,
+        abi: IMAIN_CORE_default.abi,
+        functionName: "ExtensionEligibility",
+        args: [loanHubAddress, coreLoanId, daysToAdd, false, true, refinance]
+      });
+      const possible = eligibility[0];
+      const fee = eligibility[1];
+      if (!possible) throw new Error("Extension not possible under current loan state.");
+      if (fee > 0n) {
+        await this.approveIfNeeded(this.client.usdbAddress, this.stakingAddress, fee);
       }
     }
     const { request } = await this.client.publicClient.simulateContract({
@@ -13527,6 +13701,29 @@ var PrivateMarketsModule = class {
   async _syncTx(txHash) {
     await this.client.api.syncTransaction(txHash);
   }
+  /**
+   * Returns the contract's minimum seed amount required to create a public
+   * (non-private) market, in USDB wei (18 decimals). Public markets are
+   * subject to a higher floor than private ones.
+   */
+  async getMinSeedPublic() {
+    return this.client.publicClient.readContract({
+      address: this.privateMarketAddress,
+      abi: APrivateTradingMarket_default.abi,
+      functionName: "minSeedPublic"
+    });
+  }
+  /**
+   * Returns the contract's minimum seed amount required to create a
+   * private (voter-panel) market, in USDB wei (18 decimals). Often 0.
+   */
+  async getMinSeedPrivate() {
+    return this.client.publicClient.readContract({
+      address: this.privateMarketAddress,
+      abi: APrivateTradingMarket_default.abi,
+      functionName: "minSeedPrivate"
+    });
+  }
   async syncOrder(txHash) {
     await this.client.api.syncOrder(txHash, "private");
   }
@@ -13540,17 +13737,31 @@ var PrivateMarketsModule = class {
     if (!this.client.walletClient || !this.client.walletClient.account) {
       throw new Error("Stateful initialization (walletClient) is required for write methods.");
     }
-    const ecoData = await this.client.publicClient.readContract({
-      address: this.privateMarketAddress,
-      abi: APrivateTradingMarket_default.abi,
-      functionName: "ecosystems",
-      args: [maintoken]
-    });
+    const minSeedFn = privateEvent ? "minSeedPrivate" : "minSeedPublic";
+    const [ecoData, minSeed] = await Promise.all([
+      this.client.publicClient.readContract({
+        address: this.privateMarketAddress,
+        abi: APrivateTradingMarket_default.abi,
+        functionName: "ecosystems",
+        args: [maintoken]
+      }),
+      this.client.publicClient.readContract({
+        address: this.privateMarketAddress,
+        abi: APrivateTradingMarket_default.abi,
+        functionName: minSeedFn
+      })
+    ]);
     const factoryAddress = ecoData.factory ?? ecoData[0];
     const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
     if (!factoryAddress || factoryAddress === ZERO_ADDRESS) {
       throw new Error(
         `Token ${maintoken} is not a registered ecosystem token \u2014 cannot create a market under it. Use an existing ecosystem token address as maintoken.`
+      );
+    }
+    if (seedAmount < minSeed) {
+      const kind = privateEvent ? "private" : "public";
+      throw new Error(
+        `seedAmount (${seedAmount}) is below the contract minimum for ${kind} markets (${minSeed} wei = ${Number(minSeed) / 1e18} USDB). Pass a larger seedAmount.`
       );
     }
     const feeAmount = await this.client.publicClient.readContract({

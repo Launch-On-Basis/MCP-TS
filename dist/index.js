@@ -328,9 +328,12 @@ const TOOLS = [
     { name: "pm_get_market_data", description: "Get private market data.", inputSchema: { type: "object", properties: { market: { type: "string" } }, required: ["market"] } },
     { name: "pm_get_user_shares", description: "Get shares in private market.", inputSchema: { type: "object", properties: { market: { type: "string" }, outcome: { type: "number" } }, required: ["market", "outcome"] } },
     { name: "pm_can_user_buy", description: "Check if you can buy on private market.", inputSchema: { type: "object", properties: { market: { type: "string" } }, required: ["market"] } },
+    { name: "pm_get_min_seed_public", description: "Get min seed amount (USDB) for a non-private private market. Higher than private-only.", inputSchema: { type: "object", properties: {} } },
+    { name: "pm_get_min_seed_private", description: "Get min seed amount (USDB) for a voter-panel private market. Often 0.", inputSchema: { type: "object", properties: {} } },
     // ── Extra methods ──────────────────────────────────
     { name: "veto_outcome", description: "Veto a proposed market outcome (admin).", inputSchema: { type: "object", properties: { market: { type: "string" }, outcome: { type: "number" } }, required: ["market", "outcome"] } },
     { name: "buy_orders_and_contract", description: "Buy from order book + AMM in one transaction.", inputSchema: { type: "object", properties: { market: { type: "string" }, outcome: { type: "number" }, order_ids: { type: "array", items: { type: "number" } }, amount_usdb: { type: "number" }, min_shares: { type: "number" } }, required: ["market", "outcome", "order_ids", "amount_usdb"] } },
+    { name: "get_min_seed", description: "Get minimum seed amount (USDB) required to create a public prediction market. createMarket reverts below this.", inputSchema: { type: "object", properties: {} } },
     { name: "get_agent_wallet", description: "Get wallet address for an agent ID.", inputSchema: { type: "object", properties: { agent_id: { type: "number" } }, required: ["agent_id"] } },
     { name: "get_agent_metadata", description: "Get metadata key for an agent.", inputSchema: { type: "object", properties: { agent_id: { type: "number" }, key: { type: "string" } }, required: ["agent_id", "key"] } },
     { name: "batch_create_gradual_vesting", description: "Batch create gradual vesting schedules. All share the same token, start_time, duration, time_unit, ecosystem.", inputSchema: { type: "object", properties: { beneficiaries: { type: "array", items: { type: "string" }, description: "Wallet addresses" }, token: { type: "string" }, amounts: { type: "array", items: { type: "number" }, description: "Amount per beneficiary" }, memos: { type: "array", items: { type: "string" }, description: "Memo per beneficiary" }, start_time: { type: "number" }, duration_days: { type: "number" }, time_unit: { type: "number", description: "0=Sec,1=Min,2=Hr,3=Day" }, ecosystem: { type: "string" } }, required: ["beneficiaries", "token", "amounts", "start_time", "duration_days"] } },
@@ -1259,6 +1262,18 @@ async function handleTool(name, args) {
             case "buy_orders_and_contract": {
                 const tx = await client.predictionMarkets.buyOrdersAndContract(args.market, args.outcome, args.order_ids.map((id) => BigInt(id)), client.usdbAddress, toRaw(args.amount_usdb), toRaw(args.min_shares || 0));
                 return txResult(tx);
+            }
+            case "get_min_seed": {
+                const seed = await client.predictionMarkets.getMinSeed();
+                return ok({ min_seed_usdb: fromRaw(seed) });
+            }
+            case "pm_get_min_seed_public": {
+                const seed = await client.privateMarkets.getMinSeedPublic();
+                return ok({ min_seed_usdb: fromRaw(seed) });
+            }
+            case "pm_get_min_seed_private": {
+                const seed = await client.privateMarkets.getMinSeedPrivate();
+                return ok({ min_seed_usdb: fromRaw(seed) });
             }
             case "get_agent_wallet": {
                 return ok({ wallet: await client.agent.getAgentWallet(BigInt(args.agent_id)) });

@@ -1163,6 +1163,11 @@ declare class PredictionMarketsModule {
     constructor(client: BasisClient, marketTradingAddress: Address);
     private _syncTx;
     /**
+     * Returns the contract's minimum seed amount required to create a market,
+     * in USDB wei (18 decimals). `createMarket` will revert if `seedAmount < minSeed`.
+     */
+    getMinSeed(): Promise<bigint>;
+    /**
      * Helper to approve tokens for the MarketTrading contract
      */
     private approveIfNeeded;
@@ -1438,7 +1443,14 @@ declare class VestingModule {
     }>;
     /**
      * Repays a loan taken on a vesting schedule.
-     * Auto-approves the borrowed token (USDB) to the vesting contract.
+     *
+     * Auto-approves the exact debt of the borrowed token to the vesting
+     * contract. Reads `vestingSchedules(id).ecosystem` and
+     * `ecosystems(maintoken).mainpair` to discover the borrow token
+     * (typically USDB but ecosystem-defined), then reads the loan's
+     * `fullAmount` from the loan hub. If the underlying loan is no longer
+     * active (already repaid / liquidated), no approval is performed —
+     * the contract handles cleanup paths without a transferFrom.
      */
     repayLoanOnVesting(vestingId: bigint): Promise<{
         hash: `0x${string}`;
@@ -1547,6 +1559,8 @@ declare class StakingModule {
     private stakingAddress;
     constructor(client: BasisClient, stakingAddress: Address);
     private _syncTx;
+    /** Reads the caller's active staking loan: { hubId, loanHubAddress }. Throws if none. */
+    private _getActiveStakingLoan;
     private approveIfNeeded;
     /**
      * Wraps STASIS (MAINTOKEN) into wSTASIS.
@@ -1594,15 +1608,18 @@ declare class StakingModule {
         receipt: viem.TransactionReceipt;
     }>;
     /**
-     * Repays the active staking loan. Auto-approves USDB to the staking contract.
+     * Repays the active staking loan. Auto-approves the exact USDB debt
+     * to the staking contract (read from the loan hub). Throws if the
+     * caller has no active staking loan.
      */
     repay(): Promise<{
         hash: `0x${string}`;
         receipt: viem.TransactionReceipt;
     }>;
     /**
-     * Extends the active staking loan.
-     * @param daysToAdd - integer, minimum 10
+     * Extends the active staking loan. When `payInUSDB` is true, auto-approves
+     * the exact extension fee (read from the ecosystem's ExtensionEligibility).
+     * @param daysToAdd - integer, minimum 10 (or 0 with refinance = true)
      * @param payInUSDB - whether to pay extension fee in USDB
      * @param refinance - whether to refinance the loan
      */
@@ -1834,6 +1851,17 @@ declare class PrivateMarketsModule {
     constructor(client: BasisClient, privateMarketAddress: Address);
     private approveIfNeeded;
     private _syncTx;
+    /**
+     * Returns the contract's minimum seed amount required to create a public
+     * (non-private) market, in USDB wei (18 decimals). Public markets are
+     * subject to a higher floor than private ones.
+     */
+    getMinSeedPublic(): Promise<bigint>;
+    /**
+     * Returns the contract's minimum seed amount required to create a
+     * private (voter-panel) market, in USDB wei (18 decimals). Often 0.
+     */
+    getMinSeedPrivate(): Promise<bigint>;
     private syncOrder;
     /**
      * Internal: creates a private market on-chain. Use createMarketWithMetadata() instead.

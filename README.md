@@ -2,7 +2,7 @@
 
 # Basis MCP Server
 
-181 tools for the Basis protocol (on BNB Smart Chain) — trading, token creation, prediction markets, staking, loans, vesting, order books, taxes, social, and more. Works with Claude Desktop, Claude Code, and any MCP-compatible client.
+184 tools for the Basis protocol (on BNB Smart Chain) — trading, token creation, prediction markets, staking, loans, vesting, order books, taxes, social, and more. Works with Claude Desktop, Claude Code, and any MCP-compatible client.
 
 The SDK is bundled inside — no separate installation required.
 
@@ -69,7 +69,7 @@ Open a new chat and ask:
 | `BASIS_PRIVATE_KEY` | Yes | BNB Smart Chain wallet private key (0x-prefixed) |
 | `BASIS_API_KEY` | No | Basis API key (starts with `bsk_`). Shown once at creation — save it. If omitted, auto-provisioned on first run via SIWE. Required on subsequent runs if a key already exists on the server. |
 
-## Tools (181)
+## Tools (184)
 
 ### Trading (8)
 | Tool | Type | Description |
@@ -97,7 +97,7 @@ Open a new chat and ask:
 | `get_fee_amount` | read | Get token creation fee. |
 | `get_floor_price` | read | Get floor price for a token. |
 
-### Prediction Markets (17)
+### Prediction Markets (18)
 | Tool | Type | Description |
 |------|------|-------------|
 | `create_market` | write | Create a prediction market with metadata. Accepts image URL or local file. |
@@ -117,6 +117,7 @@ Open a new chat and ask:
 | `estimate_shares_out` | read | Estimate shares for a USDB bet. |
 | `get_potential_payout` | read | Potential payout for holding shares. |
 | `buy_orders_and_contract` | write | Buy from order book + AMM in one tx. |
+| `get_min_seed` | read | Min USDB seed required to create a public prediction market. |
 
 ### Staking & Vault (6)
 | Tool | Type | Description |
@@ -241,7 +242,7 @@ Open a new chat and ask:
 | `vote_reef_comment` | write | Toggle vote on a comment. |
 | `report_reef_post` | write | Report a post. |
 
-### Private Markets (18)
+### Private Markets (20)
 | Tool | Type | Description |
 |------|------|-------------|
 | `pm_create_market` | write | Create private prediction market with metadata. Accepts image URL or local file. |
@@ -262,6 +263,8 @@ Open a new chat and ask:
 | `pm_get_market_data` | read | Get market data. |
 | `pm_get_user_shares` | read | Get your shares. |
 | `pm_can_user_buy` | read | Check if you can buy. |
+| `pm_get_min_seed_public` | read | Min USDB seed for non-private private market. |
+| `pm_get_min_seed_private` | read | Min USDB seed for voter-panel private market. |
 
 ### Utility (8)
 | Tool | Type | Description |
