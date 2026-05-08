@@ -2,7 +2,7 @@
 
 # Basis MCP Server
 
-184 tools for the Basis protocol (on BNB Smart Chain) — trading, token creation, prediction markets, staking, loans, vesting, order books, taxes, social, and more. Works with Claude Desktop, Claude Code, and any MCP-compatible client.
+200 tools for the Basis protocol (on BNB Smart Chain) — trading, token creation, prediction markets, staking, loans, vesting, order books, taxes, social, BTC/ETH/BNB/CAKE/DOGE up/down betting, and more. Works with Claude Desktop, Claude Code, and any MCP-compatible client.
 
 The SDK is bundled inside — no separate installation required.
 
@@ -69,7 +69,7 @@ Open a new chat and ask:
 | `BASIS_PRIVATE_KEY` | Yes | BNB Smart Chain wallet private key (0x-prefixed) |
 | `BASIS_API_KEY` | No | Basis API key (starts with `bsk_`). Shown once at creation — save it. If omitted, auto-provisioned on first run via SIWE. Required on subsequent runs if a key already exists on the server. |
 
-## Tools (184)
+## Tools (200)
 
 ### Trading (8)
 | Tool | Type | Description |
@@ -318,6 +318,28 @@ Open a new chat and ask:
 | `get_moltbook_status` | read | Check Moltbook link status, post count, karma. |
 | `verify_moltbook_post` | write | Submit a Moltbook post for points (max 3/day). |
 | `get_verified_moltbook_posts` | read | List all verified Moltbook posts. |
+
+### Up/Down (16)
+Asset-as-arg shape: every tool takes `asset: btc | eth | bnb | cake | doge`. Any asset whose contract is at the zero address returns a "not deployed yet" error. `tf` is `0=5m, 1=15m, 2=1h, 3=4h, 4=24h`.
+
+| Tool | Type | Description |
+|------|------|-------------|
+| `updown_get_round` | read | Round struct by id (or current round if `round_id` omitted). |
+| `updown_get_user_bet` | read | Your bet on a round. `amount: 0` means no bet. |
+| `updown_quote_shares` | read | Preview shares for a hypothetical bet. Includes slippage. |
+| `updown_quote_claim` | read | Exact USDB claimable from a settled round. 0 = nothing to claim. |
+| `updown_bet` | write | Place bull/bear bet. Auto-approves USDB, pre-checks balance + minBet, optional `slippage_percent`. |
+| `updown_claim` | write | Claim winnings/refund. Refuses to send if `quote_claim` returns 0. |
+| `updown_settle` | write | Public settle of an ended round (anyone can call). |
+| `updown_cancel_stalled` | write | Public cancel after settle window expired (anyone can call). |
+| `updown_my_history` | read | Aggregate bet/claim summary across all assets + timeframes. |
+| `updown_list_rounds` | read | Paginated round list per token, optional `tf` / `outcome` filters. |
+| `updown_bull_probability` | read | Current bull probability (bps + %) for the active round. |
+| `updown_quote_current_payout` | read | Estimated payout if active round settled now in your favor. |
+| `updown_min_bet` | read | Minimum USDB bet amount per asset. |
+| `updown_tf_duration` | read | Round duration in seconds for a timeframe. |
+| `updown_paused` | read | Check if betting is paused on an asset. |
+| `updown_slippage_threshold` | read | Current slippage threshold in BPS for the active round (decays 95%→55%). |
 
 ## How It Works
 

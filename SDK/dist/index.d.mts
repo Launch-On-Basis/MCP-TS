@@ -230,6 +230,94 @@ interface MyDailyCaps {
     pointCaps: DailyCapEntry<DailyCapPointCategory>[];
     countCaps: DailyCapEntry<DailyCapCountCategory>[];
 }
+type UpDownAssetKey = 'btc' | 'eth' | 'bnb' | 'cake' | 'doge';
+type UpDownSideStr = 'bull' | 'bear';
+type UpDownOutcomeStr = 'pending' | 'bull_wins' | 'bear_wins' | 'canceled';
+interface UpDownRoundSummary {
+    contract: string;
+    tf: number;
+    roundId: number;
+    startTime: string;
+    endTime: string;
+    settledAt: string | null;
+    startPriceUsd8dec: string;
+    endPriceUsd8dec: string | null;
+    endPriceRoundId: string | null;
+    bullPoolUsdb: string;
+    bearPoolUsdb: string;
+    sharesBull: string;
+    sharesBear: string;
+    seedBonusUsdb: string;
+    outcome: UpDownOutcomeStr;
+    settler: string | null;
+}
+interface UpDownRoundsList {
+    token: UpDownAssetKey;
+    rounds: UpDownRoundSummary[];
+    pagination: {
+        limit: number;
+        hasMore: boolean;
+        nextCursor: string | null;
+    };
+}
+interface UpDownRoundDetail {
+    token: UpDownAssetKey;
+    round: UpDownRoundSummary;
+    bets: {
+        totalEvents: number;
+        distinctBettors: number;
+        bull: {
+            bettors: number;
+            stakeUsdb: string;
+            sharesTotal: string;
+        };
+        bear: {
+            bettors: number;
+            stakeUsdb: string;
+            sharesTotal: string;
+        };
+    };
+    claims: {
+        total: number;
+        won: number;
+        refunded: number;
+        totalPayoutUsdb: string;
+    };
+}
+interface UpDownActiveBet {
+    token: UpDownAssetKey;
+    contract: string;
+    tf: number;
+    roundId: number;
+    side: UpDownSideStr;
+    stakeUsdb: string;
+    placedAt: string;
+    endTime: string;
+}
+interface UpDownClaimableBet {
+    token: UpDownAssetKey;
+    contract: string;
+    tf: number;
+    roundId: number;
+    side: UpDownSideStr;
+    stakeUsdb: string;
+    outcome: UpDownOutcomeStr;
+}
+interface MyUpDown {
+    wallet: string;
+    totalBetEvents: number;
+    distinctRoundsBet: number;
+    totalStakeUsdb: string;
+    totalPayoutUsdb: string;
+    netUsdb: string;
+    wins: number;
+    losses: number;
+    refunds: number;
+    activeBetsCount: number;
+    claimableCount: number;
+    activeBets: UpDownActiveBet[];
+    claimableBets: UpDownClaimableBet[];
+}
 declare class BasisAPI {
     private client;
     constructor(client: BasisClient);
@@ -743,6 +831,39 @@ declare class BasisAPI {
      * is 0-100, rounded to 1 decimal, clamped at 100.
      */
     getMyDailyCaps(): Promise<MyDailyCaps>;
+    /**
+     * GET /api/v1/me/updown — aggregate UPDOWN bet/claim summary for the
+     * authenticated wallet across every Up/Down asset and all timeframes.
+     * Returns one summary blob with embedded `activeBets[]` and `claimableBets[]` arrays.
+     *
+     * To get the exact USDB amount a `claimableBets` entry will pay, call
+     * `client.updown[token].quoteClaimPayout(tf, roundId, user)` on-chain.
+     */
+    getMyUpDown(): Promise<MyUpDown>;
+    /**
+     * GET /api/v1/updown/rounds — paginated list of rounds for a given token,
+     * newest-first per timeframe. Cursor pagination via roundId (descending).
+     *
+     * **API key required.** Unlike `getMyUpDown()`, this endpoint does NOT
+     * accept SIWE — call `BasisClient.create({ privateKey })` (which auto-
+     * provisions a key) or pass `apiKey` explicitly.
+     */
+    getUpDownRounds(options: {
+        token: UpDownAssetKey;
+        tf?: number;
+        outcome?: UpDownOutcomeStr;
+        cursor?: string;
+        limit?: number;
+    }): Promise<UpDownRoundsList>;
+    /**
+     * GET /api/v1/updown/rounds/{token}/{tf}/{roundId} — single round with
+     * aggregate bet/claim statistics. Per-bettor wallet lists are NOT returned —
+     * use `getMyUpDown()` for per-wallet history (or query on-chain via getLogs).
+     *
+     * **API key required.** Same auth model as `getUpDownRounds` — SIWE is not
+     * accepted by this endpoint.
+     */
+    getUpDownRound(token: UpDownAssetKey, tf: number, roundId: bigint | number): Promise<UpDownRoundDetail>;
     /** GET /api/reef/feed — paginated social feed. */
     getReefFeed(options?: {
         section?: string;
@@ -2344,6 +2465,363 @@ declare class AgentIdentityModule {
     }>;
 }
 
+/**
+ * Thrown by `settleCurrentRound` when the contract reverts because Chainlink
+ * has not yet published a price update past `round.endTime`. This is a
+ * transient condition — wait for the oracle to tick and retry, or use
+ * `advanceRound(tf)` which polls the oracle automatically.
+ *
+ * The two on-chain reverts that map to this error:
+ *  - `NoUpdateAfterEndTime` — `latestRoundData().updatedAt < round.endTime`
+ *  - `NoValidPriceInWindow` — no Chainlink round in the lookback window had
+ *    `updatedAt >= round.endTime`
+ */
+declare class OracleNotReadyError extends Error {
+    readonly tf: number;
+    readonly endTime: bigint;
+    readonly contractError: 'NoUpdateAfterEndTime' | 'NoValidPriceInWindow';
+    constructor(message: string, tf: number, endTime: bigint, contractError: 'NoUpdateAfterEndTime' | 'NoValidPriceInWindow');
+}
+/** Timeframe enum: 0=5m, 1=15m, 2=1h, 3=4h, 4=24h. */
+declare const Timeframe: {
+    readonly FIVE_MIN: 0;
+    readonly FIFTEEN_MIN: 1;
+    readonly ONE_HOUR: 2;
+    readonly FOUR_HOUR: 3;
+    readonly ONE_DAY: 4;
+};
+type Timeframe = typeof Timeframe[keyof typeof Timeframe];
+/** Side enum: 0=None, 1=Bull, 2=Bear. Bets always pass 1 or 2. */
+declare const Side: {
+    readonly NONE: 0;
+    readonly BULL: 1;
+    readonly BEAR: 2;
+};
+type Side = typeof Side[keyof typeof Side];
+/** Outcome enum: 0=Pending, 1=BullWins, 2=BearWins, 3=Canceled. */
+declare const Outcome: {
+    readonly PENDING: 0;
+    readonly BULL_WINS: 1;
+    readonly BEAR_WINS: 2;
+    readonly CANCELED: 3;
+};
+type Outcome = typeof Outcome[keyof typeof Outcome];
+type UpDownAsset = 'btc' | 'eth' | 'bnb' | 'cake' | 'doge';
+/** On-chain Round struct returned by getRound(tf, roundId). */
+interface UpDownRound {
+    startTime: bigint;
+    endTime: bigint;
+    settledAt: bigint;
+    startPrice: bigint;
+    endPrice: bigint;
+    endPriceRoundId: bigint;
+    virtBull: bigint;
+    virtBear: bigint;
+    bullPool: bigint;
+    bearPool: bigint;
+    sharesBull: bigint;
+    sharesBear: bigint;
+    seedBonus: bigint;
+    outcome: number;
+}
+/** On-chain UserBet struct returned by getUserBet(tf, roundId, user). */
+interface UpDownUserBet {
+    side: number;
+    amount: bigint;
+    shares: bigint;
+    claimed: boolean;
+}
+declare class UpDownAssetModule {
+    private client;
+    readonly address: Address;
+    readonly asset: UpDownAsset;
+    constructor(client: BasisClient, address: Address, asset: UpDownAsset);
+    private _syncTx;
+    private _approveUsdbIfNeeded;
+    /** Current/active round id for a timeframe. 0 means no rounds opened yet. */
+    currentRoundId(tf: number): Promise<bigint>;
+    /** Full Round struct for a specific round. */
+    getRound(tf: number, roundId: bigint): Promise<UpDownRound>;
+    /**
+     * Convenience: fetches both currentRoundId and the full Round in two reads.
+     * Returns null if no rounds have opened yet for the timeframe.
+     */
+    getCurrentRound(tf: number): Promise<{
+        roundId: bigint;
+        round: UpDownRound;
+    } | null>;
+    /** A user's bet on a specific round. amount=0 means no bet placed. */
+    getUserBet(tf: number, roundId: bigint, user: Address): Promise<UpDownUserBet>;
+    /**
+     * Preview the shares a hypothetical bet would mint right now on the current
+     * round. Includes slippage. Returns 0 if no active round, amount=0, or side=None.
+     */
+    quoteShares(tf: number, side: Side, amount: bigint): Promise<bigint>;
+    /** Projected payout if the current round were settled with current pool sizes. */
+    quoteCurrentPayout(tf: number, user: Address): Promise<bigint>;
+    /**
+     * The exact USDB amount the user can claim right now from a settled round.
+     * Returns 0 in every "nothing to claim" case (lost, already claimed, pending,
+     * no bet). Use this to gate the Claim button: show iff `> 0`.
+     */
+    quoteClaimPayout(tf: number, roundId: bigint, user: Address): Promise<bigint>;
+    /** Implied bull-side probability scaled by USD_UNIT (1e18). Divide by 1e18 for fraction. */
+    currentBullProbability(tf: number): Promise<bigint>;
+    /** Current slippage threshold in BPS. Decays from 9500 (95%) at start to 5500 (55%) at end. */
+    currentSlippageThreshold(tf: number): Promise<bigint>;
+    /** Round duration for a timeframe, in seconds. */
+    tfDuration(tf: number): Promise<bigint>;
+    /** Minimum bet size, USDB 18-dec. */
+    minBet(): Promise<bigint>;
+    /** Carryover queued from panicCancel, waiting for the next round to seed. */
+    pendingCarryover(tf: number): Promise<bigint>;
+    /** Current virtual base reserve for a timeframe, USDB 18-dec. */
+    protocolVirtBase(tf: number): Promise<bigint>;
+    /** Chainlink AggregatorV3 address used by this contract. */
+    priceFeed(): Promise<Address>;
+    /** USDB token address — should match client.usdbAddress for live deployments. */
+    usdb(): Promise<Address>;
+    /** Configured swap contract address. */
+    swap(): Promise<Address>;
+    /** Configured wash-trade detection token. */
+    washToken(): Promise<Address>;
+    /** True if the contract is paused — bet/settle/claim writes will revert. */
+    paused(): Promise<boolean>;
+    /** Admin address — only this address can call admin write functions. */
+    CEO(): Promise<Address>;
+    /**
+     * Place a bullish bet on the current round of `tf`. Auto-approves USDB.
+     * Pre-checks `amount >= minBet` and `usdb.balanceOf(user) >= amount` before sending.
+     *
+     * @param minShares - optional slippage protection. If non-zero, throws
+     *   client-side when `quoteShares(tf, BULL, amount) < minShares` so the SDK
+     *   never burns gas on a bet that would mint fewer shares than expected.
+     *   Default 0 = no slippage check.
+     */
+    betBull(tf: number, amount: bigint, minShares?: bigint): Promise<{
+        hash: `0x${string}`;
+        receipt: viem.TransactionReceipt;
+    }>;
+    /**
+     * Place a bearish bet on the current round of `tf`. Auto-approves USDB.
+     * See `betBull` for slippage protection details.
+     */
+    betBear(tf: number, amount: bigint, minShares?: bigint): Promise<{
+        hash: `0x${string}`;
+        receipt: viem.TransactionReceipt;
+    }>;
+    private _bet;
+    /**
+     * Claim winnings or refund for a settled round. Pre-checks via
+     * `quoteClaimPayout` and throws "Nothing to claim" client-side if 0.
+     */
+    claim(tf: number, roundId: bigint): Promise<{
+        hash: `0x${string}`;
+        receipt: viem.TransactionReceipt;
+    }>;
+    /**
+     * **Fire-and-forget settle** for the current round of `tf`. Public — anyone
+     * can call once the round has ended and a valid Chainlink price is available.
+     *
+     * This is the low-level primitive: ONE attempt, no polling, no waiting. If
+     * the Chainlink oracle hasn't ticked past `round.endTime` yet, this throws
+     * an `OracleNotReadyError` (a typed, catchable error — no need to parse
+     * revert strings) so the caller can retry on their own schedule. For an
+     * automatic poll-and-settle flow, use `advanceRound(tf)` instead.
+     *
+     * Pre-checks (avoid burning gas on a guaranteed revert):
+     *  - Throws if no active round (`startPrediction` never called).
+     *  - Throws if the round is already settled.
+     *  - Throws if `now <= endTime` (still active) — `TooEarlyToSettle`.
+     *  - Throws if `now > endTime + FINALIZE_WINDOW` and points the caller to
+     *    `cancelCurrentRoundAndStartNext` instead — `TooLateForValidPrice`.
+     *
+     * @param tf - Timeframe enum (0=5m, 1=15m, 2=1h, 3=4h, 4=24h)
+     * @returns `{ hash, receipt }`
+     * @throws {OracleNotReadyError} if Chainlink hasn't updated past `round.endTime` yet
+     * @throws {Error} for all other revert reasons (round not active, already settled, etc.)
+     *
+     * @example
+     * // Manual retry loop
+     * while (true) {
+     *   try {
+     *     await client.updown.eth.settleCurrentRound(0);
+     *     break;
+     *   } catch (e) {
+     *     if (e instanceof OracleNotReadyError) {
+     *       await new Promise(r => setTimeout(r, 15_000));
+     *       continue;
+     *     }
+     *     throw e;
+     *   }
+     * }
+     */
+    settleCurrentRound(tf: number): Promise<{
+        hash: `0x${string}`;
+        receipt: viem.TransactionReceipt;
+    }>;
+    /**
+     * Cancel the current round of `tf` and open the next one. Public — anyone
+     * can call once `endTime + FINALIZE_WINDOW` has passed (settle timed out).
+     *
+     * Pre-checks:
+     *  - Throws if no active round.
+     *  - Throws if the round is already settled.
+     *  - Throws if `now <= endTime + FINALIZE_WINDOW` — settle is still
+     *    possible; points caller to `settleCurrentRound` instead.
+     */
+    cancelCurrentRoundAndStartNext(tf: number): Promise<{
+        hash: `0x${string}`;
+        receipt: viem.TransactionReceipt;
+    }>;
+    /**
+     * **Settle-or-cancel the current round, with built-in oracle wait.**
+     *
+     * High-level helper that auto-routes to settle vs cancel based on round
+     * timing AND polls the Chainlink price feed before submitting a settle tx.
+     * Use this when you want a "just make it work" call — no manual retry loops,
+     * no error-string parsing, no oracle-lag handling.
+     *
+     * Routing logic:
+     *  - Round still in progress (`now <= endTime`) → throws "still in progress".
+     *  - In the settle window (`endTime < now <= endTime + 20min`) → polls the
+     *    price feed every `pollIntervalMs` until `updatedAt > endTime`, then
+     *    calls `settleCurrentRound` once. Returns `mode: 'settle'`.
+     *  - Past the settle window → calls `cancelCurrentRoundAndStartNext`.
+     *    Returns `mode: 'cancel'`.
+     *
+     * **NOTE: this can take several minutes.** On less-active Chainlink feeds
+     * (ETH/CAKE/DOGE on BSC) the oracle can lag 30s-2min past `round.endTime`.
+     * Default `maxWaitMs` is 6min, leaving 14min of the contract's 20min settle
+     * window as headroom. If the oracle stays stuck for `maxWaitMs`, throws
+     * — at that point a fallback to cancel is the only option (will happen
+     * automatically once you re-call `advanceRound` after the 20min mark).
+     *
+     * @param tf - Timeframe enum (0=5m, 1=15m, 2=1h, 3=4h, 4=24h)
+     * @param opts.pollIntervalMs - Default `8000`. How often to re-read the
+     *   price feed when waiting. Matches the dApp's UI poll cadence.
+     * @param opts.maxWaitMs - Default `360000` (6 min). Max time to wait for
+     *   the oracle before giving up and throwing.
+     *
+     * @returns `{ hash, receipt, mode }` where `mode` is `'settle'` if the round
+     *   was settled with an oracle price, or `'cancel'` if the settle window
+     *   expired and the round was canceled (refunding all bets via subsequent claim).
+     *
+     * @throws If no active round, the round is already settled, the round is
+     *   still in progress, or the oracle stays stuck longer than `maxWaitMs`.
+     *
+     * @example
+     * // Standard bot loop — handles oracle lag automatically. May take several minutes.
+     * await client.updown.eth.advanceRound(0);
+     *
+     * @example
+     * // Tight keeper that wants instant fail/retry
+     * try {
+     *   await client.updown.eth.settleCurrentRound(0); // fire-and-forget
+     * } catch (e) {
+     *   if (e instanceof OracleNotReadyError) {
+     *     // wait, retry on your own schedule
+     *   }
+     * }
+     */
+    advanceRound(tf: number, opts?: {
+        pollIntervalMs?: number;
+        maxWaitMs?: number;
+    }): Promise<{
+        hash: `0x${string}`;
+        receipt: any;
+        mode: 'settle' | 'cancel';
+    }>;
+    /**
+     * Polls the Chainlink price feed every `pollIntervalMs` until
+     * `latestRoundData.updatedAt > endTime`. Throws if `maxWaitMs` elapses
+     * without the oracle ticking. Used by `advanceRound` to bridge the
+     * settle path's oracle dependency.
+     */
+    private _waitForOracle;
+    /**
+     * Internal: validate timing for settle / cancel. `mode='settle'` requires
+     * the round to be in the [endTime, endTime+FINALIZE_WINDOW] window;
+     * `mode='cancel'` requires it to be past that window.
+     */
+    private _preCheckRoundTiming;
+    /** ADMIN. Open round 1 on every timeframe. Idempotent across timeframes. */
+    startPrediction(): Promise<{
+        hash: `0x${string}`;
+        receipt: viem.TransactionReceipt;
+    }>;
+    /** ADMIN. Toggle the pause flag. */
+    setPaused(paused: boolean): Promise<{
+        hash: `0x${string}`;
+        receipt: viem.TransactionReceipt;
+    }>;
+    /**
+     * ADMIN. Emergency cancel + pause: cancels every Pending round, captures
+     * `seedBonus` into `pendingCarryover[tf]`, then sets paused = true.
+     */
+    panicCancel(): Promise<{
+        hash: `0x${string}`;
+        receipt: viem.TransactionReceipt;
+    }>;
+    /** ADMIN. Counterpart to panicCancel — unpause and open the next round on each timeframe. */
+    resumePrediction(): Promise<{
+        hash: `0x${string}`;
+        receipt: viem.TransactionReceipt;
+    }>;
+    /** ADMIN. Update the minimum bet size, USDB 18-dec. */
+    setMinBet(amount: bigint): Promise<{
+        hash: `0x${string}`;
+        receipt: viem.TransactionReceipt;
+    }>;
+    /** ADMIN. Update the Chainlink price feed address. */
+    setPriceFeed(newFeed: Address): Promise<{
+        hash: `0x${string}`;
+        receipt: viem.TransactionReceipt;
+    }>;
+    /** ADMIN. Update the USDB token address. */
+    setUsdb(newUsdb: Address): Promise<{
+        hash: `0x${string}`;
+        receipt: viem.TransactionReceipt;
+    }>;
+    /** ADMIN. Update the swap contract address. */
+    setSwap(newSwap: Address): Promise<{
+        hash: `0x${string}`;
+        receipt: viem.TransactionReceipt;
+    }>;
+    /** ADMIN. Update the wash-trade detection token. */
+    setWashToken(newToken: Address): Promise<{
+        hash: `0x${string}`;
+        receipt: viem.TransactionReceipt;
+    }>;
+    /** ADMIN. Transfer the CEO role. */
+    setCEO(newCEO: Address): Promise<{
+        hash: `0x${string}`;
+        receipt: viem.TransactionReceipt;
+    }>;
+    /**
+     * ADMIN — DANGER. Pull USDB from the contract to CEO. For genuinely-stuck
+     * funds only. The SDK does not gate this — caller must be CEO or the on-chain
+     * tx will revert with `NotCEO`.
+     */
+    emergencyWithdraw(amount: bigint): Promise<{
+        hash: `0x${string}`;
+        receipt: viem.TransactionReceipt;
+    }>;
+    private _adminWrite;
+}
+declare class UpDownModule {
+    btc?: UpDownAssetModule;
+    eth?: UpDownAssetModule;
+    bnb?: UpDownAssetModule;
+    cake?: UpDownAssetModule;
+    doge?: UpDownAssetModule;
+    constructor(client: BasisClient, addresses: Partial<Record<UpDownAsset, Address>>);
+    /** All deployed per-asset modules, in declaration order. */
+    get all(): UpDownAssetModule[];
+    /** Convenience lookup: `client.updown.byAsset('btc')` returns the module or undefined. */
+    byAsset(asset: UpDownAsset): UpDownAssetModule | undefined;
+}
+
 interface BasisClientOptions {
     rpcUrl?: string;
     privateKey?: `0x${string}`;
@@ -2364,6 +2842,13 @@ interface BasisClientOptions {
     taxesAddress?: Address;
     usdbAddress?: Address;
     mainTokenAddress?: Address;
+    upDownAddresses?: {
+        btc?: Address;
+        eth?: Address;
+        bnb?: Address;
+        cake?: Address;
+        doge?: Address;
+    };
     agent?: boolean | AgentConfig;
 }
 declare class BasisClient {
@@ -2387,6 +2872,7 @@ declare class BasisClient {
     leverageSimulator: LeverageSimulatorModule;
     taxes: TaxesModule;
     agent: AgentIdentityModule;
+    updown: UpDownModule;
     private _sessionCookie;
     private _apiKey;
     /**
@@ -2469,4 +2955,4 @@ declare class BasisClient {
     }>;
 }
 
-export { type AgentConfig, AgentIdentityModule, AgentSyncError, type ApiKeyInfo, BasisAPI, BasisClient, type BasisClientOptions, type Candle, type Comment, type CursorPagination, type DailyCapCountCategory, type DailyCapEntry, type DailyCapPointCategory, FactoryModule, LeverageSimulatorModule, type LiquidityEntry, LoansModule, MarketReaderModule, MarketResolverModule, type MetadataPayload, type MyDailyCaps, type MyProfile, type MyProjectItem, type MyProjects, type MyReferrals, type MySocial, type MyStats, type MyXAccount, type Order, OrderBookModule, type Pagination, PredictionMarketsModule, PrivateMarketsModule, type ProjectUpdatePayload, type ReferralUser, StakingModule, TaxesModule, type Token, type Trade, TradingModule, type UpdateProfilePayload, type UpdateProfileResult, VestingModule, type WalletTransaction, type WhitelistEntry };
+export { type AgentConfig, AgentIdentityModule, AgentSyncError, type ApiKeyInfo, BasisAPI, BasisClient, type BasisClientOptions, type Candle, type Comment, type CursorPagination, type DailyCapCountCategory, type DailyCapEntry, type DailyCapPointCategory, FactoryModule, LeverageSimulatorModule, type LiquidityEntry, LoansModule, MarketReaderModule, MarketResolverModule, type MetadataPayload, type MyDailyCaps, type MyProfile, type MyProjectItem, type MyProjects, type MyReferrals, type MySocial, type MyStats, type MyUpDown, type MyXAccount, OracleNotReadyError, type Order, OrderBookModule, Outcome, type Pagination, PredictionMarketsModule, PrivateMarketsModule, type ProjectUpdatePayload, type ReferralUser, Side, StakingModule, TaxesModule, Timeframe, type Token, type Trade, TradingModule, type UpDownActiveBet, type UpDownAsset, type UpDownAssetKey, UpDownAssetModule, type UpDownClaimableBet, UpDownModule, type UpDownOutcomeStr, type UpDownRound, type UpDownRoundDetail, type UpDownRoundSummary, type UpDownRoundsList, type UpDownSideStr, type UpDownUserBet, type UpdateProfilePayload, type UpdateProfileResult, VestingModule, type WalletTransaction, type WhitelistEntry };

@@ -6,6 +6,26 @@ import { SiweMessage } from "siwe";
 
 // src/api.ts
 import sharp from "sharp";
+var UPDOWN_TOKENS = ["btc", "eth", "bnb", "cake", "doge"];
+function validateUpDownToken(token) {
+  if (typeof token !== "string" || !UPDOWN_TOKENS.includes(token)) {
+    throw new Error(`token must be one of ${UPDOWN_TOKENS.join(", ")} (got ${JSON.stringify(token)})`);
+  }
+}
+function validateUpDownTf(tf) {
+  if (typeof tf !== "number" || !Number.isInteger(tf) || tf < 0 || tf > 4) {
+    throw new Error(`tf must be an integer 0-4 (got ${JSON.stringify(tf)})`);
+  }
+}
+function validateUpDownRoundId(roundId) {
+  if (typeof roundId === "bigint") {
+    if (roundId < 1n) throw new Error(`roundId must be a positive integer (got ${roundId})`);
+    return;
+  }
+  if (typeof roundId !== "number" || !Number.isInteger(roundId) || roundId < 1) {
+    throw new Error(`roundId must be a positive integer (got ${JSON.stringify(roundId)})`);
+  }
+}
 var BasisAPI = class {
   client;
   constructor(client) {
@@ -780,6 +800,63 @@ var BasisAPI = class {
    */
   async getMyDailyCaps() {
     const res = await this.fetchWithAuth("/api/v1/me/daily-caps");
+    return res.json();
+  }
+  // -----------------------------------------------------------------------
+  // Up/Down
+  // -----------------------------------------------------------------------
+  /**
+   * GET /api/v1/me/updown — aggregate UPDOWN bet/claim summary for the
+   * authenticated wallet across every Up/Down asset and all timeframes.
+   * Returns one summary blob with embedded `activeBets[]` and `claimableBets[]` arrays.
+   *
+   * To get the exact USDB amount a `claimableBets` entry will pay, call
+   * `client.updown[token].quoteClaimPayout(tf, roundId, user)` on-chain.
+   */
+  async getMyUpDown() {
+    const res = await this.fetchWithAuth("/api/v1/me/updown");
+    return res.json();
+  }
+  /**
+   * GET /api/v1/updown/rounds — paginated list of rounds for a given token,
+   * newest-first per timeframe. Cursor pagination via roundId (descending).
+   *
+   * **API key required.** Unlike `getMyUpDown()`, this endpoint does NOT
+   * accept SIWE — call `BasisClient.create({ privateKey })` (which auto-
+   * provisions a key) or pass `apiKey` explicitly.
+   */
+  async getUpDownRounds(options) {
+    if (!this.client.apiKey) {
+      throw new Error("API key required for getUpDownRounds (this endpoint does not accept SIWE).");
+    }
+    validateUpDownToken(options.token);
+    if (options.tf !== void 0) validateUpDownTf(options.tf);
+    const params = new URLSearchParams({ token: options.token });
+    if (options.tf !== void 0) params.set("tf", String(options.tf));
+    if (options.outcome) params.set("outcome", options.outcome);
+    if (options.cursor) params.set("cursor", options.cursor);
+    if (options.limit !== void 0) params.set("limit", String(options.limit));
+    const res = await this.fetchWithAuth(`/api/v1/updown/rounds?${params.toString()}`);
+    return res.json();
+  }
+  /**
+   * GET /api/v1/updown/rounds/{token}/{tf}/{roundId} — single round with
+   * aggregate bet/claim statistics. Per-bettor wallet lists are NOT returned —
+   * use `getMyUpDown()` for per-wallet history (or query on-chain via getLogs).
+   *
+   * **API key required.** Same auth model as `getUpDownRounds` — SIWE is not
+   * accepted by this endpoint.
+   */
+  async getUpDownRound(token, tf, roundId) {
+    if (!this.client.apiKey) {
+      throw new Error("API key required for getUpDownRound (this endpoint does not accept SIWE).");
+    }
+    validateUpDownToken(token);
+    validateUpDownTf(tf);
+    validateUpDownRoundId(roundId);
+    const res = await this.fetchWithAuth(
+      `/api/v1/updown/rounds/${encodeURIComponent(token)}/${tf}/${roundId}`
+    );
     return res.json();
   }
   // -----------------------------------------------------------------------
@@ -5753,8 +5830,8 @@ var PredictionMarketsModule = class {
       })
     ]);
     const factoryAddress = ecoData.factory ?? ecoData[0];
-    const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
-    if (!factoryAddress || factoryAddress === ZERO_ADDRESS) {
+    const ZERO_ADDRESS2 = "0x0000000000000000000000000000000000000000";
+    if (!factoryAddress || factoryAddress === ZERO_ADDRESS2) {
       throw new Error(
         `Token ${maintoken} is not a registered ecosystem token \u2014 cannot create a market under it. Use an existing ecosystem token address as maintoken.`
       );
@@ -6920,6 +6997,18 @@ var LoansModule = class {
   async takeLoan(ecosystem, collateral, amount, daysCount) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
       throw new Error("Stateful initialization (walletClient) is required for write methods.");
+    }
+    const user = this.client.walletClient.account.address;
+    const balance = await this.client.publicClient.readContract({
+      address: collateral,
+      abi: IERC20_default.abi,
+      functionName: "balanceOf",
+      args: [user]
+    });
+    if (balance < amount) {
+      throw new Error(
+        `Insufficient collateral balance. Have: ${balance} wei (${Number(balance) / 1e18}), want: ${amount} wei (${Number(amount) / 1e18}). Token: ${collateral}`
+      );
     }
     await this.approveIfNeeded(collateral, this.loanHubAddress, amount);
     const { request } = await this.client.publicClient.simulateContract({
@@ -13752,8 +13841,8 @@ var PrivateMarketsModule = class {
       })
     ]);
     const factoryAddress = ecoData.factory ?? ecoData[0];
-    const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
-    if (!factoryAddress || factoryAddress === ZERO_ADDRESS) {
+    const ZERO_ADDRESS2 = "0x0000000000000000000000000000000000000000";
+    if (!factoryAddress || factoryAddress === ZERO_ADDRESS2) {
       throw new Error(
         `Token ${maintoken} is not a registered ecosystem token \u2014 cannot create a market under it. Use an existing ecosystem token address as maintoken.`
       );
@@ -16876,6 +16965,2144 @@ var AgentIdentityModule = class {
   }
 };
 
+// src/abis/AUpDown.json
+var AUpDown_default = {
+  _format: "hh-sol-artifact-1",
+  contractName: "AUpDown",
+  sourceName: "contracts/UPDOWN.sol",
+  abi: [
+    {
+      inputs: [],
+      stateMutability: "nonpayable",
+      type: "constructor"
+    },
+    {
+      inputs: [],
+      name: "AlreadyBetOnOtherSide",
+      type: "error"
+    },
+    {
+      inputs: [],
+      name: "AlreadyStarted",
+      type: "error"
+    },
+    {
+      inputs: [],
+      name: "BettingClosed",
+      type: "error"
+    },
+    {
+      inputs: [],
+      name: "InvalidAmount",
+      type: "error"
+    },
+    {
+      inputs: [],
+      name: "InvalidPrice",
+      type: "error"
+    },
+    {
+      inputs: [],
+      name: "InvalidTimeframe",
+      type: "error"
+    },
+    {
+      inputs: [],
+      name: "NoActiveRound",
+      type: "error"
+    },
+    {
+      inputs: [],
+      name: "NoUpdateAfterEndTime",
+      type: "error"
+    },
+    {
+      inputs: [],
+      name: "NoValidPriceInWindow",
+      type: "error"
+    },
+    {
+      inputs: [],
+      name: "NotCEO",
+      type: "error"
+    },
+    {
+      inputs: [],
+      name: "NothingToClaim",
+      type: "error"
+    },
+    {
+      inputs: [],
+      name: "Paused",
+      type: "error"
+    },
+    {
+      inputs: [],
+      name: "RoundAlreadySettled",
+      type: "error"
+    },
+    {
+      inputs: [],
+      name: "RoundNotSettled",
+      type: "error"
+    },
+    {
+      inputs: [],
+      name: "StalePrice",
+      type: "error"
+    },
+    {
+      inputs: [],
+      name: "TooEarlyToSettle",
+      type: "error"
+    },
+    {
+      inputs: [],
+      name: "TooLateForValidPrice",
+      type: "error"
+    },
+    {
+      inputs: [],
+      name: "ZeroAddress",
+      type: "error"
+    },
+    {
+      inputs: [],
+      name: "ZeroShares",
+      type: "error"
+    },
+    {
+      anonymous: false,
+      inputs: [
+        {
+          indexed: true,
+          internalType: "uint8",
+          name: "tf",
+          type: "uint8"
+        },
+        {
+          indexed: true,
+          internalType: "address",
+          name: "user",
+          type: "address"
+        },
+        {
+          indexed: true,
+          internalType: "uint256",
+          name: "roundId",
+          type: "uint256"
+        },
+        {
+          indexed: false,
+          internalType: "enum BTCPrediction.Side",
+          name: "side",
+          type: "uint8"
+        },
+        {
+          indexed: false,
+          internalType: "uint256",
+          name: "amount",
+          type: "uint256"
+        },
+        {
+          indexed: false,
+          internalType: "uint256",
+          name: "shares",
+          type: "uint256"
+        }
+      ],
+      name: "BetPlaced",
+      type: "event"
+    },
+    {
+      anonymous: false,
+      inputs: [
+        {
+          indexed: true,
+          internalType: "uint8",
+          name: "tf",
+          type: "uint8"
+        },
+        {
+          indexed: true,
+          internalType: "address",
+          name: "user",
+          type: "address"
+        },
+        {
+          indexed: true,
+          internalType: "uint256",
+          name: "roundId",
+          type: "uint256"
+        },
+        {
+          indexed: false,
+          internalType: "uint256",
+          name: "amount",
+          type: "uint256"
+        }
+      ],
+      name: "BetRefunded",
+      type: "event"
+    },
+    {
+      anonymous: false,
+      inputs: [
+        {
+          indexed: true,
+          internalType: "uint8",
+          name: "tf",
+          type: "uint8"
+        },
+        {
+          indexed: true,
+          internalType: "address",
+          name: "user",
+          type: "address"
+        },
+        {
+          indexed: true,
+          internalType: "uint256",
+          name: "roundId",
+          type: "uint256"
+        },
+        {
+          indexed: false,
+          internalType: "uint256",
+          name: "stake",
+          type: "uint256"
+        },
+        {
+          indexed: false,
+          internalType: "uint256",
+          name: "payout",
+          type: "uint256"
+        }
+      ],
+      name: "BetWon",
+      type: "event"
+    },
+    {
+      anonymous: false,
+      inputs: [
+        {
+          indexed: true,
+          internalType: "address",
+          name: "oldCEO",
+          type: "address"
+        },
+        {
+          indexed: true,
+          internalType: "address",
+          name: "newCEO",
+          type: "address"
+        }
+      ],
+      name: "CEOUpdated",
+      type: "event"
+    },
+    {
+      anonymous: false,
+      inputs: [
+        {
+          indexed: true,
+          internalType: "uint8",
+          name: "tf",
+          type: "uint8"
+        },
+        {
+          indexed: true,
+          internalType: "uint256",
+          name: "fromRoundId",
+          type: "uint256"
+        },
+        {
+          indexed: false,
+          internalType: "uint256",
+          name: "amount",
+          type: "uint256"
+        }
+      ],
+      name: "CarryoverCaptured",
+      type: "event"
+    },
+    {
+      anonymous: false,
+      inputs: [
+        {
+          indexed: false,
+          internalType: "uint256",
+          name: "amount",
+          type: "uint256"
+        }
+      ],
+      name: "EmergencyWithdraw",
+      type: "event"
+    },
+    {
+      anonymous: false,
+      inputs: [
+        {
+          indexed: false,
+          internalType: "uint256",
+          name: "newMinBet",
+          type: "uint256"
+        }
+      ],
+      name: "MinBetUpdated",
+      type: "event"
+    },
+    {
+      anonymous: false,
+      inputs: [
+        {
+          indexed: true,
+          internalType: "uint8",
+          name: "tf",
+          type: "uint8"
+        },
+        {
+          indexed: true,
+          internalType: "uint256",
+          name: "roundId",
+          type: "uint256"
+        },
+        {
+          indexed: false,
+          internalType: "uint256",
+          name: "startTime",
+          type: "uint256"
+        },
+        {
+          indexed: false,
+          internalType: "uint256",
+          name: "endTime",
+          type: "uint256"
+        },
+        {
+          indexed: false,
+          internalType: "int256",
+          name: "startPrice",
+          type: "int256"
+        },
+        {
+          indexed: false,
+          internalType: "uint256",
+          name: "seedBonus",
+          type: "uint256"
+        }
+      ],
+      name: "NewRound",
+      type: "event"
+    },
+    {
+      anonymous: false,
+      inputs: [
+        {
+          indexed: false,
+          internalType: "bool",
+          name: "paused",
+          type: "bool"
+        }
+      ],
+      name: "PausedSet",
+      type: "event"
+    },
+    {
+      anonymous: false,
+      inputs: [
+        {
+          indexed: true,
+          internalType: "uint8",
+          name: "tf",
+          type: "uint8"
+        },
+        {
+          indexed: true,
+          internalType: "uint256",
+          name: "roundId",
+          type: "uint256"
+        }
+      ],
+      name: "PredictionStarted",
+      type: "event"
+    },
+    {
+      anonymous: false,
+      inputs: [
+        {
+          indexed: true,
+          internalType: "address",
+          name: "oldFeed",
+          type: "address"
+        },
+        {
+          indexed: true,
+          internalType: "address",
+          name: "newFeed",
+          type: "address"
+        }
+      ],
+      name: "PriceFeedUpdated",
+      type: "event"
+    },
+    {
+      anonymous: false,
+      inputs: [
+        {
+          indexed: true,
+          internalType: "uint8",
+          name: "tf",
+          type: "uint8"
+        },
+        {
+          indexed: true,
+          internalType: "uint256",
+          name: "roundId",
+          type: "uint256"
+        }
+      ],
+      name: "RoundCanceled",
+      type: "event"
+    },
+    {
+      anonymous: false,
+      inputs: [
+        {
+          indexed: true,
+          internalType: "uint8",
+          name: "tf",
+          type: "uint8"
+        },
+        {
+          indexed: true,
+          internalType: "uint256",
+          name: "roundId",
+          type: "uint256"
+        },
+        {
+          indexed: true,
+          internalType: "address",
+          name: "settler",
+          type: "address"
+        },
+        {
+          indexed: false,
+          internalType: "int256",
+          name: "endPrice",
+          type: "int256"
+        },
+        {
+          indexed: false,
+          internalType: "enum BTCPrediction.Outcome",
+          name: "outcome",
+          type: "uint8"
+        }
+      ],
+      name: "RoundSettled",
+      type: "event"
+    },
+    {
+      anonymous: false,
+      inputs: [
+        {
+          indexed: true,
+          internalType: "address",
+          name: "oldSwap",
+          type: "address"
+        },
+        {
+          indexed: true,
+          internalType: "address",
+          name: "newSwap",
+          type: "address"
+        }
+      ],
+      name: "SwapUpdated",
+      type: "event"
+    },
+    {
+      anonymous: false,
+      inputs: [
+        {
+          indexed: true,
+          internalType: "address",
+          name: "oldUsdb",
+          type: "address"
+        },
+        {
+          indexed: true,
+          internalType: "address",
+          name: "newUsdb",
+          type: "address"
+        }
+      ],
+      name: "UsdbUpdated",
+      type: "event"
+    },
+    {
+      anonymous: false,
+      inputs: [
+        {
+          indexed: true,
+          internalType: "uint8",
+          name: "tf",
+          type: "uint8"
+        },
+        {
+          indexed: false,
+          internalType: "uint256",
+          name: "newBase",
+          type: "uint256"
+        },
+        {
+          indexed: false,
+          internalType: "uint256",
+          name: "volumeApplied",
+          type: "uint256"
+        }
+      ],
+      name: "VirtBaseUpdated",
+      type: "event"
+    },
+    {
+      anonymous: false,
+      inputs: [
+        {
+          indexed: true,
+          internalType: "address",
+          name: "oldToken",
+          type: "address"
+        },
+        {
+          indexed: true,
+          internalType: "address",
+          name: "newToken",
+          type: "address"
+        }
+      ],
+      name: "WashTokenUpdated",
+      type: "event"
+    },
+    {
+      inputs: [],
+      name: "BPS_DENOMINATOR",
+      outputs: [
+        {
+          internalType: "uint256",
+          name: "",
+          type: "uint256"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [],
+      name: "CARRYOVER_BPS",
+      outputs: [
+        {
+          internalType: "uint256",
+          name: "",
+          type: "uint256"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [],
+      name: "CEO",
+      outputs: [
+        {
+          internalType: "address",
+          name: "",
+          type: "address"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [],
+      name: "DECAY_BPS",
+      outputs: [
+        {
+          internalType: "uint256",
+          name: "",
+          type: "uint256"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [],
+      name: "FINALIZE_WINDOW",
+      outputs: [
+        {
+          internalType: "uint256",
+          name: "",
+          type: "uint256"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [],
+      name: "GROWTH_BPS",
+      outputs: [
+        {
+          internalType: "uint256",
+          name: "",
+          type: "uint256"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [],
+      name: "PRICE_STALENESS",
+      outputs: [
+        {
+          internalType: "uint256",
+          name: "",
+          type: "uint256"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [],
+      name: "SLIPPAGE_END_BP",
+      outputs: [
+        {
+          internalType: "uint256",
+          name: "",
+          type: "uint256"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [],
+      name: "SLIPPAGE_START_BP",
+      outputs: [
+        {
+          internalType: "uint256",
+          name: "",
+          type: "uint256"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [],
+      name: "TF_COUNT",
+      outputs: [
+        {
+          internalType: "uint8",
+          name: "",
+          type: "uint8"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [],
+      name: "USD_UNIT",
+      outputs: [
+        {
+          internalType: "uint256",
+          name: "",
+          type: "uint256"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [],
+      name: "VIRT_BASE_CAP",
+      outputs: [
+        {
+          internalType: "uint256",
+          name: "",
+          type: "uint256"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [],
+      name: "VIRT_FLOOR",
+      outputs: [
+        {
+          internalType: "uint256",
+          name: "",
+          type: "uint256"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "uint8",
+          name: "tf",
+          type: "uint8"
+        },
+        {
+          internalType: "uint256",
+          name: "amount",
+          type: "uint256"
+        }
+      ],
+      name: "betBear",
+      outputs: [],
+      stateMutability: "nonpayable",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "uint8",
+          name: "tf",
+          type: "uint8"
+        },
+        {
+          internalType: "uint256",
+          name: "amount",
+          type: "uint256"
+        }
+      ],
+      name: "betBull",
+      outputs: [],
+      stateMutability: "nonpayable",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "uint8",
+          name: "tf",
+          type: "uint8"
+        }
+      ],
+      name: "cancelCurrentRoundAndStartNext",
+      outputs: [],
+      stateMutability: "nonpayable",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "uint8",
+          name: "tf",
+          type: "uint8"
+        },
+        {
+          internalType: "uint256",
+          name: "roundId",
+          type: "uint256"
+        }
+      ],
+      name: "claim",
+      outputs: [],
+      stateMutability: "nonpayable",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "uint8",
+          name: "tf",
+          type: "uint8"
+        }
+      ],
+      name: "currentBullProbability",
+      outputs: [
+        {
+          internalType: "uint256",
+          name: "",
+          type: "uint256"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "uint8",
+          name: "",
+          type: "uint8"
+        }
+      ],
+      name: "currentRoundId",
+      outputs: [
+        {
+          internalType: "uint256",
+          name: "",
+          type: "uint256"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "uint8",
+          name: "tf",
+          type: "uint8"
+        }
+      ],
+      name: "currentSlippageThreshold",
+      outputs: [
+        {
+          internalType: "uint256",
+          name: "",
+          type: "uint256"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "uint256",
+          name: "amount",
+          type: "uint256"
+        }
+      ],
+      name: "emergencyWithdraw",
+      outputs: [],
+      stateMutability: "nonpayable",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "uint8",
+          name: "tf",
+          type: "uint8"
+        },
+        {
+          internalType: "uint256",
+          name: "roundId",
+          type: "uint256"
+        }
+      ],
+      name: "getRound",
+      outputs: [
+        {
+          components: [
+            {
+              internalType: "uint256",
+              name: "startTime",
+              type: "uint256"
+            },
+            {
+              internalType: "uint256",
+              name: "endTime",
+              type: "uint256"
+            },
+            {
+              internalType: "uint256",
+              name: "settledAt",
+              type: "uint256"
+            },
+            {
+              internalType: "int256",
+              name: "startPrice",
+              type: "int256"
+            },
+            {
+              internalType: "int256",
+              name: "endPrice",
+              type: "int256"
+            },
+            {
+              internalType: "uint80",
+              name: "endPriceRoundId",
+              type: "uint80"
+            },
+            {
+              internalType: "uint256",
+              name: "virtBull",
+              type: "uint256"
+            },
+            {
+              internalType: "uint256",
+              name: "virtBear",
+              type: "uint256"
+            },
+            {
+              internalType: "uint256",
+              name: "bullPool",
+              type: "uint256"
+            },
+            {
+              internalType: "uint256",
+              name: "bearPool",
+              type: "uint256"
+            },
+            {
+              internalType: "uint256",
+              name: "sharesBull",
+              type: "uint256"
+            },
+            {
+              internalType: "uint256",
+              name: "sharesBear",
+              type: "uint256"
+            },
+            {
+              internalType: "uint256",
+              name: "seedBonus",
+              type: "uint256"
+            },
+            {
+              internalType: "enum BTCPrediction.Outcome",
+              name: "outcome",
+              type: "uint8"
+            }
+          ],
+          internalType: "struct BTCPrediction.Round",
+          name: "",
+          type: "tuple"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "uint8",
+          name: "tf",
+          type: "uint8"
+        },
+        {
+          internalType: "uint256",
+          name: "roundId",
+          type: "uint256"
+        },
+        {
+          internalType: "address",
+          name: "user",
+          type: "address"
+        }
+      ],
+      name: "getUserBet",
+      outputs: [
+        {
+          components: [
+            {
+              internalType: "enum BTCPrediction.Side",
+              name: "side",
+              type: "uint8"
+            },
+            {
+              internalType: "uint256",
+              name: "amount",
+              type: "uint256"
+            },
+            {
+              internalType: "uint256",
+              name: "shares",
+              type: "uint256"
+            },
+            {
+              internalType: "bool",
+              name: "claimed",
+              type: "bool"
+            }
+          ],
+          internalType: "struct BTCPrediction.UserBet",
+          name: "",
+          type: "tuple"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [],
+      name: "minBet",
+      outputs: [
+        {
+          internalType: "uint256",
+          name: "",
+          type: "uint256"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [],
+      name: "panicCancel",
+      outputs: [],
+      stateMutability: "nonpayable",
+      type: "function"
+    },
+    {
+      inputs: [],
+      name: "paused",
+      outputs: [
+        {
+          internalType: "bool",
+          name: "",
+          type: "bool"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "uint8",
+          name: "",
+          type: "uint8"
+        }
+      ],
+      name: "pendingCarryover",
+      outputs: [
+        {
+          internalType: "uint256",
+          name: "",
+          type: "uint256"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [],
+      name: "priceFeed",
+      outputs: [
+        {
+          internalType: "contract AggregatorV3Interface",
+          name: "",
+          type: "address"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "uint8",
+          name: "",
+          type: "uint8"
+        }
+      ],
+      name: "protocolVirtBase",
+      outputs: [
+        {
+          internalType: "uint256",
+          name: "",
+          type: "uint256"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "uint8",
+          name: "tf",
+          type: "uint8"
+        },
+        {
+          internalType: "uint256",
+          name: "roundId",
+          type: "uint256"
+        },
+        {
+          internalType: "address",
+          name: "user",
+          type: "address"
+        }
+      ],
+      name: "quoteClaimPayout",
+      outputs: [
+        {
+          internalType: "uint256",
+          name: "",
+          type: "uint256"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "uint8",
+          name: "tf",
+          type: "uint8"
+        },
+        {
+          internalType: "address",
+          name: "user",
+          type: "address"
+        }
+      ],
+      name: "quoteCurrentPayout",
+      outputs: [
+        {
+          internalType: "uint256",
+          name: "",
+          type: "uint256"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "uint8",
+          name: "tf",
+          type: "uint8"
+        },
+        {
+          internalType: "enum BTCPrediction.Side",
+          name: "side",
+          type: "uint8"
+        },
+        {
+          internalType: "uint256",
+          name: "amount",
+          type: "uint256"
+        }
+      ],
+      name: "quoteShares",
+      outputs: [
+        {
+          internalType: "uint256",
+          name: "",
+          type: "uint256"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [],
+      name: "resumePrediction",
+      outputs: [],
+      stateMutability: "nonpayable",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "uint8",
+          name: "",
+          type: "uint8"
+        },
+        {
+          internalType: "uint256",
+          name: "",
+          type: "uint256"
+        }
+      ],
+      name: "rounds",
+      outputs: [
+        {
+          internalType: "uint256",
+          name: "startTime",
+          type: "uint256"
+        },
+        {
+          internalType: "uint256",
+          name: "endTime",
+          type: "uint256"
+        },
+        {
+          internalType: "uint256",
+          name: "settledAt",
+          type: "uint256"
+        },
+        {
+          internalType: "int256",
+          name: "startPrice",
+          type: "int256"
+        },
+        {
+          internalType: "int256",
+          name: "endPrice",
+          type: "int256"
+        },
+        {
+          internalType: "uint80",
+          name: "endPriceRoundId",
+          type: "uint80"
+        },
+        {
+          internalType: "uint256",
+          name: "virtBull",
+          type: "uint256"
+        },
+        {
+          internalType: "uint256",
+          name: "virtBear",
+          type: "uint256"
+        },
+        {
+          internalType: "uint256",
+          name: "bullPool",
+          type: "uint256"
+        },
+        {
+          internalType: "uint256",
+          name: "bearPool",
+          type: "uint256"
+        },
+        {
+          internalType: "uint256",
+          name: "sharesBull",
+          type: "uint256"
+        },
+        {
+          internalType: "uint256",
+          name: "sharesBear",
+          type: "uint256"
+        },
+        {
+          internalType: "uint256",
+          name: "seedBonus",
+          type: "uint256"
+        },
+        {
+          internalType: "enum BTCPrediction.Outcome",
+          name: "outcome",
+          type: "uint8"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "address",
+          name: "newCEO",
+          type: "address"
+        }
+      ],
+      name: "setCEO",
+      outputs: [],
+      stateMutability: "nonpayable",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "uint256",
+          name: "_minBet",
+          type: "uint256"
+        }
+      ],
+      name: "setMinBet",
+      outputs: [],
+      stateMutability: "nonpayable",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "bool",
+          name: "_paused",
+          type: "bool"
+        }
+      ],
+      name: "setPaused",
+      outputs: [],
+      stateMutability: "nonpayable",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "address",
+          name: "newFeed",
+          type: "address"
+        }
+      ],
+      name: "setPriceFeed",
+      outputs: [],
+      stateMutability: "nonpayable",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "address",
+          name: "newSwap",
+          type: "address"
+        }
+      ],
+      name: "setSwap",
+      outputs: [],
+      stateMutability: "nonpayable",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "address",
+          name: "newUsdb",
+          type: "address"
+        }
+      ],
+      name: "setUsdb",
+      outputs: [],
+      stateMutability: "nonpayable",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "address",
+          name: "newToken",
+          type: "address"
+        }
+      ],
+      name: "setWashToken",
+      outputs: [],
+      stateMutability: "nonpayable",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "uint8",
+          name: "tf",
+          type: "uint8"
+        }
+      ],
+      name: "settleCurrentRound",
+      outputs: [],
+      stateMutability: "nonpayable",
+      type: "function"
+    },
+    {
+      inputs: [],
+      name: "startPrediction",
+      outputs: [],
+      stateMutability: "nonpayable",
+      type: "function"
+    },
+    {
+      inputs: [],
+      name: "swap",
+      outputs: [
+        {
+          internalType: "contract IASwap",
+          name: "",
+          type: "address"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "uint8",
+          name: "tf",
+          type: "uint8"
+        }
+      ],
+      name: "tfDuration",
+      outputs: [
+        {
+          internalType: "uint256",
+          name: "",
+          type: "uint256"
+        }
+      ],
+      stateMutability: "pure",
+      type: "function"
+    },
+    {
+      inputs: [],
+      name: "usdb",
+      outputs: [
+        {
+          internalType: "contract IERC20",
+          name: "",
+          type: "address"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "uint8",
+          name: "",
+          type: "uint8"
+        },
+        {
+          internalType: "uint256",
+          name: "",
+          type: "uint256"
+        },
+        {
+          internalType: "address",
+          name: "",
+          type: "address"
+        }
+      ],
+      name: "userBets",
+      outputs: [
+        {
+          internalType: "enum BTCPrediction.Side",
+          name: "side",
+          type: "uint8"
+        },
+        {
+          internalType: "uint256",
+          name: "amount",
+          type: "uint256"
+        },
+        {
+          internalType: "uint256",
+          name: "shares",
+          type: "uint256"
+        },
+        {
+          internalType: "bool",
+          name: "claimed",
+          type: "bool"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [],
+      name: "washToken",
+      outputs: [
+        {
+          internalType: "address",
+          name: "",
+          type: "address"
+        }
+      ],
+      stateMutability: "view",
+      type: "function"
+    }
+  ]
+};
+
+// src/abis/AggregatorV3Interface.json
+var AggregatorV3Interface_default = {
+  _format: "hh-sol-artifact-1",
+  contractName: "AggregatorV3Interface",
+  sourceName: "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol",
+  abi: [
+    {
+      inputs: [],
+      name: "decimals",
+      outputs: [{ internalType: "uint8", name: "", type: "uint8" }],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [],
+      name: "description",
+      outputs: [{ internalType: "string", name: "", type: "string" }],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [],
+      name: "latestRoundData",
+      outputs: [
+        { internalType: "uint80", name: "roundId", type: "uint80" },
+        { internalType: "int256", name: "answer", type: "int256" },
+        { internalType: "uint256", name: "startedAt", type: "uint256" },
+        { internalType: "uint256", name: "updatedAt", type: "uint256" },
+        { internalType: "uint80", name: "answeredInRound", type: "uint80" }
+      ],
+      stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [],
+      name: "version",
+      outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+      stateMutability: "view",
+      type: "function"
+    }
+  ]
+};
+
+// src/modules/UpDown.ts
+var OracleNotReadyError = class extends Error {
+  tf;
+  endTime;
+  contractError;
+  constructor(message, tf, endTime, contractError) {
+    super(message);
+    this.name = "OracleNotReadyError";
+    this.tf = tf;
+    this.endTime = endTime;
+    this.contractError = contractError;
+  }
+};
+var Timeframe = {
+  FIVE_MIN: 0,
+  FIFTEEN_MIN: 1,
+  ONE_HOUR: 2,
+  FOUR_HOUR: 3,
+  ONE_DAY: 4
+};
+var Side = { NONE: 0, BULL: 1, BEAR: 2 };
+var Outcome = { PENDING: 0, BULL_WINS: 1, BEAR_WINS: 2, CANCELED: 3 };
+var KNOWN_UPDOWN_ASSETS = ["btc", "eth", "bnb", "cake", "doge"];
+var ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+var UpDownAssetModule = class {
+  client;
+  address;
+  asset;
+  constructor(client, address, asset) {
+    this.client = client;
+    this.address = address;
+    this.asset = asset;
+  }
+  // --- Internals ---
+  async _syncTx(txHash) {
+    await this.client.api.syncTransaction(txHash);
+  }
+  async _approveUsdbIfNeeded(amount) {
+    if (!this.client.walletClient || !this.client.walletClient.account) {
+      throw new Error("Wallet account is required for approval.");
+    }
+    const account = this.client.walletClient.account;
+    const allowance = await this.client.publicClient.readContract({
+      address: this.client.usdbAddress,
+      abi: IERC20_default.abi,
+      functionName: "allowance",
+      args: [account.address, this.address]
+    });
+    if (allowance < amount) {
+      const { request } = await this.client.publicClient.simulateContract({
+        account,
+        address: this.client.usdbAddress,
+        abi: IERC20_default.abi,
+        functionName: "approve",
+        args: [this.address, amount]
+      });
+      const hash = await this.client.writeContract(request);
+      await this.client.publicClient.waitForTransactionReceipt({ hash });
+    }
+  }
+  // --- Reads ---
+  /** Current/active round id for a timeframe. 0 means no rounds opened yet. */
+  async currentRoundId(tf) {
+    return this.client.publicClient.readContract({
+      address: this.address,
+      abi: AUpDown_default.abi,
+      functionName: "currentRoundId",
+      args: [tf]
+    });
+  }
+  /** Full Round struct for a specific round. */
+  async getRound(tf, roundId) {
+    return this.client.publicClient.readContract({
+      address: this.address,
+      abi: AUpDown_default.abi,
+      functionName: "getRound",
+      args: [tf, roundId]
+    });
+  }
+  /**
+   * Convenience: fetches both currentRoundId and the full Round in two reads.
+   * Returns null if no rounds have opened yet for the timeframe.
+   */
+  async getCurrentRound(tf) {
+    const roundId = await this.currentRoundId(tf);
+    if (roundId === 0n) return null;
+    const round = await this.getRound(tf, roundId);
+    return { roundId, round };
+  }
+  /** A user's bet on a specific round. amount=0 means no bet placed. */
+  async getUserBet(tf, roundId, user) {
+    return this.client.publicClient.readContract({
+      address: this.address,
+      abi: AUpDown_default.abi,
+      functionName: "getUserBet",
+      args: [tf, roundId, user]
+    });
+  }
+  /**
+   * Preview the shares a hypothetical bet would mint right now on the current
+   * round. Includes slippage. Returns 0 if no active round, amount=0, or side=None.
+   */
+  async quoteShares(tf, side, amount) {
+    return this.client.publicClient.readContract({
+      address: this.address,
+      abi: AUpDown_default.abi,
+      functionName: "quoteShares",
+      args: [tf, side, amount]
+    });
+  }
+  /** Projected payout if the current round were settled with current pool sizes. */
+  async quoteCurrentPayout(tf, user) {
+    return this.client.publicClient.readContract({
+      address: this.address,
+      abi: AUpDown_default.abi,
+      functionName: "quoteCurrentPayout",
+      args: [tf, user]
+    });
+  }
+  /**
+   * The exact USDB amount the user can claim right now from a settled round.
+   * Returns 0 in every "nothing to claim" case (lost, already claimed, pending,
+   * no bet). Use this to gate the Claim button: show iff `> 0`.
+   */
+  async quoteClaimPayout(tf, roundId, user) {
+    return this.client.publicClient.readContract({
+      address: this.address,
+      abi: AUpDown_default.abi,
+      functionName: "quoteClaimPayout",
+      args: [tf, roundId, user]
+    });
+  }
+  /** Implied bull-side probability scaled by USD_UNIT (1e18). Divide by 1e18 for fraction. */
+  async currentBullProbability(tf) {
+    return this.client.publicClient.readContract({
+      address: this.address,
+      abi: AUpDown_default.abi,
+      functionName: "currentBullProbability",
+      args: [tf]
+    });
+  }
+  /** Current slippage threshold in BPS. Decays from 9500 (95%) at start to 5500 (55%) at end. */
+  async currentSlippageThreshold(tf) {
+    return this.client.publicClient.readContract({
+      address: this.address,
+      abi: AUpDown_default.abi,
+      functionName: "currentSlippageThreshold",
+      args: [tf]
+    });
+  }
+  /** Round duration for a timeframe, in seconds. */
+  async tfDuration(tf) {
+    return this.client.publicClient.readContract({
+      address: this.address,
+      abi: AUpDown_default.abi,
+      functionName: "tfDuration",
+      args: [tf]
+    });
+  }
+  /** Minimum bet size, USDB 18-dec. */
+  async minBet() {
+    return this.client.publicClient.readContract({
+      address: this.address,
+      abi: AUpDown_default.abi,
+      functionName: "minBet"
+    });
+  }
+  /** Carryover queued from panicCancel, waiting for the next round to seed. */
+  async pendingCarryover(tf) {
+    return this.client.publicClient.readContract({
+      address: this.address,
+      abi: AUpDown_default.abi,
+      functionName: "pendingCarryover",
+      args: [tf]
+    });
+  }
+  /** Current virtual base reserve for a timeframe, USDB 18-dec. */
+  async protocolVirtBase(tf) {
+    return this.client.publicClient.readContract({
+      address: this.address,
+      abi: AUpDown_default.abi,
+      functionName: "protocolVirtBase",
+      args: [tf]
+    });
+  }
+  /** Chainlink AggregatorV3 address used by this contract. */
+  async priceFeed() {
+    return this.client.publicClient.readContract({
+      address: this.address,
+      abi: AUpDown_default.abi,
+      functionName: "priceFeed"
+    });
+  }
+  /** USDB token address — should match client.usdbAddress for live deployments. */
+  async usdb() {
+    return this.client.publicClient.readContract({
+      address: this.address,
+      abi: AUpDown_default.abi,
+      functionName: "usdb"
+    });
+  }
+  /** Configured swap contract address. */
+  async swap() {
+    return this.client.publicClient.readContract({
+      address: this.address,
+      abi: AUpDown_default.abi,
+      functionName: "swap"
+    });
+  }
+  /** Configured wash-trade detection token. */
+  async washToken() {
+    return this.client.publicClient.readContract({
+      address: this.address,
+      abi: AUpDown_default.abi,
+      functionName: "washToken"
+    });
+  }
+  /** True if the contract is paused — bet/settle/claim writes will revert. */
+  async paused() {
+    return this.client.publicClient.readContract({
+      address: this.address,
+      abi: AUpDown_default.abi,
+      functionName: "paused"
+    });
+  }
+  /** Admin address — only this address can call admin write functions. */
+  async CEO() {
+    return this.client.publicClient.readContract({
+      address: this.address,
+      abi: AUpDown_default.abi,
+      functionName: "CEO"
+    });
+  }
+  // --- Writes (user) ---
+  /**
+   * Place a bullish bet on the current round of `tf`. Auto-approves USDB.
+   * Pre-checks `amount >= minBet` and `usdb.balanceOf(user) >= amount` before sending.
+   *
+   * @param minShares - optional slippage protection. If non-zero, throws
+   *   client-side when `quoteShares(tf, BULL, amount) < minShares` so the SDK
+   *   never burns gas on a bet that would mint fewer shares than expected.
+   *   Default 0 = no slippage check.
+   */
+  async betBull(tf, amount, minShares = 0n) {
+    return this._bet(tf, Side.BULL, amount, minShares, "betBull");
+  }
+  /**
+   * Place a bearish bet on the current round of `tf`. Auto-approves USDB.
+   * See `betBull` for slippage protection details.
+   */
+  async betBear(tf, amount, minShares = 0n) {
+    return this._bet(tf, Side.BEAR, amount, minShares, "betBear");
+  }
+  async _bet(tf, side, amount, minShares, fnName) {
+    if (!this.client.walletClient || !this.client.walletClient.account) {
+      throw new Error("Stateful initialization (walletClient) is required for write methods.");
+    }
+    const user = this.client.walletClient.account.address;
+    const min = await this.minBet();
+    if (amount < min) {
+      throw new Error(`Bet amount (${amount}) is below minBet (${min} wei = ${Number(min) / 1e18} USDB).`);
+    }
+    const balance = await this.client.publicClient.readContract({
+      address: this.client.usdbAddress,
+      abi: IERC20_default.abi,
+      functionName: "balanceOf",
+      args: [user]
+    });
+    if (balance < amount) {
+      throw new Error(`Insufficient USDB. Have: ${balance} wei (${Number(balance) / 1e18}), want: ${amount} wei (${Number(amount) / 1e18}).`);
+    }
+    const projected = await this.quoteShares(tf, side, amount);
+    if (projected === 0n) {
+      throw new Error(
+        "Bet would mint 0 shares due to pool skew + slippage. Consider betting the underdog side or waiting for the round to balance."
+      );
+    }
+    if (minShares > 0n && projected < minShares) {
+      throw new Error(`Slippage: quoteShares would mint ${projected} shares, below minShares (${minShares}).`);
+    }
+    await this._approveUsdbIfNeeded(amount);
+    const { request } = await this.client.publicClient.simulateContract({
+      account: this.client.walletClient.account,
+      address: this.address,
+      abi: AUpDown_default.abi,
+      functionName: fnName,
+      args: [tf, amount]
+    });
+    const hash = await this.client.writeContract(request);
+    const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
+    await this._syncTx(hash);
+    return { hash, receipt };
+  }
+  /**
+   * Claim winnings or refund for a settled round. Pre-checks via
+   * `quoteClaimPayout` and throws "Nothing to claim" client-side if 0.
+   */
+  async claim(tf, roundId) {
+    if (!this.client.walletClient || !this.client.walletClient.account) {
+      throw new Error("Stateful initialization (walletClient) is required for write methods.");
+    }
+    const user = this.client.walletClient.account.address;
+    const claimable = await this.quoteClaimPayout(tf, roundId, user);
+    if (claimable === 0n) {
+      throw new Error(`Nothing to claim on tf=${tf} roundId=${roundId} for ${user}. (Already claimed, lost, or round not settled.)`);
+    }
+    const { request } = await this.client.publicClient.simulateContract({
+      account: this.client.walletClient.account,
+      address: this.address,
+      abi: AUpDown_default.abi,
+      functionName: "claim",
+      args: [tf, roundId]
+    });
+    const hash = await this.client.writeContract(request);
+    const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
+    await this._syncTx(hash);
+    return { hash, receipt };
+  }
+  /**
+   * **Fire-and-forget settle** for the current round of `tf`. Public — anyone
+   * can call once the round has ended and a valid Chainlink price is available.
+   *
+   * This is the low-level primitive: ONE attempt, no polling, no waiting. If
+   * the Chainlink oracle hasn't ticked past `round.endTime` yet, this throws
+   * an `OracleNotReadyError` (a typed, catchable error — no need to parse
+   * revert strings) so the caller can retry on their own schedule. For an
+   * automatic poll-and-settle flow, use `advanceRound(tf)` instead.
+   *
+   * Pre-checks (avoid burning gas on a guaranteed revert):
+   *  - Throws if no active round (`startPrediction` never called).
+   *  - Throws if the round is already settled.
+   *  - Throws if `now <= endTime` (still active) — `TooEarlyToSettle`.
+   *  - Throws if `now > endTime + FINALIZE_WINDOW` and points the caller to
+   *    `cancelCurrentRoundAndStartNext` instead — `TooLateForValidPrice`.
+   *
+   * @param tf - Timeframe enum (0=5m, 1=15m, 2=1h, 3=4h, 4=24h)
+   * @returns `{ hash, receipt }`
+   * @throws {OracleNotReadyError} if Chainlink hasn't updated past `round.endTime` yet
+   * @throws {Error} for all other revert reasons (round not active, already settled, etc.)
+   *
+   * @example
+   * // Manual retry loop
+   * while (true) {
+   *   try {
+   *     await client.updown.eth.settleCurrentRound(0);
+   *     break;
+   *   } catch (e) {
+   *     if (e instanceof OracleNotReadyError) {
+   *       await new Promise(r => setTimeout(r, 15_000));
+   *       continue;
+   *     }
+   *     throw e;
+   *   }
+   * }
+   */
+  async settleCurrentRound(tf) {
+    if (!this.client.walletClient || !this.client.walletClient.account) {
+      throw new Error("Stateful initialization (walletClient) is required for write methods.");
+    }
+    await this._preCheckRoundTiming(tf, "settle");
+    try {
+      const { request } = await this.client.publicClient.simulateContract({
+        account: this.client.walletClient.account,
+        address: this.address,
+        abi: AUpDown_default.abi,
+        functionName: "settleCurrentRound",
+        args: [tf]
+      });
+      const hash = await this.client.writeContract(request);
+      const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
+      await this._syncTx(hash);
+      return { hash, receipt };
+    } catch (e) {
+      const errName = e?.cause?.data?.errorName ?? e?.data?.errorName;
+      if (errName === "NoUpdateAfterEndTime" || errName === "NoValidPriceInWindow") {
+        const roundId = await this.currentRoundId(tf);
+        const round = await this.getRound(tf, roundId);
+        throw new OracleNotReadyError(
+          `Chainlink oracle has not updated past round ${roundId} endTime yet (${errName}). Wait ~30s and retry settleCurrentRound, or use advanceRound(tf) which polls the oracle automatically.`,
+          tf,
+          round.endTime,
+          errName
+        );
+      }
+      throw e;
+    }
+  }
+  /**
+   * Cancel the current round of `tf` and open the next one. Public — anyone
+   * can call once `endTime + FINALIZE_WINDOW` has passed (settle timed out).
+   *
+   * Pre-checks:
+   *  - Throws if no active round.
+   *  - Throws if the round is already settled.
+   *  - Throws if `now <= endTime + FINALIZE_WINDOW` — settle is still
+   *    possible; points caller to `settleCurrentRound` instead.
+   */
+  async cancelCurrentRoundAndStartNext(tf) {
+    if (!this.client.walletClient || !this.client.walletClient.account) {
+      throw new Error("Stateful initialization (walletClient) is required for write methods.");
+    }
+    await this._preCheckRoundTiming(tf, "cancel");
+    const { request } = await this.client.publicClient.simulateContract({
+      account: this.client.walletClient.account,
+      address: this.address,
+      abi: AUpDown_default.abi,
+      functionName: "cancelCurrentRoundAndStartNext",
+      args: [tf]
+    });
+    const hash = await this.client.writeContract(request);
+    const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
+    await this._syncTx(hash);
+    return { hash, receipt };
+  }
+  /**
+   * **Settle-or-cancel the current round, with built-in oracle wait.**
+   *
+   * High-level helper that auto-routes to settle vs cancel based on round
+   * timing AND polls the Chainlink price feed before submitting a settle tx.
+   * Use this when you want a "just make it work" call — no manual retry loops,
+   * no error-string parsing, no oracle-lag handling.
+   *
+   * Routing logic:
+   *  - Round still in progress (`now <= endTime`) → throws "still in progress".
+   *  - In the settle window (`endTime < now <= endTime + 20min`) → polls the
+   *    price feed every `pollIntervalMs` until `updatedAt > endTime`, then
+   *    calls `settleCurrentRound` once. Returns `mode: 'settle'`.
+   *  - Past the settle window → calls `cancelCurrentRoundAndStartNext`.
+   *    Returns `mode: 'cancel'`.
+   *
+   * **NOTE: this can take several minutes.** On less-active Chainlink feeds
+   * (ETH/CAKE/DOGE on BSC) the oracle can lag 30s-2min past `round.endTime`.
+   * Default `maxWaitMs` is 6min, leaving 14min of the contract's 20min settle
+   * window as headroom. If the oracle stays stuck for `maxWaitMs`, throws
+   * — at that point a fallback to cancel is the only option (will happen
+   * automatically once you re-call `advanceRound` after the 20min mark).
+   *
+   * @param tf - Timeframe enum (0=5m, 1=15m, 2=1h, 3=4h, 4=24h)
+   * @param opts.pollIntervalMs - Default `8000`. How often to re-read the
+   *   price feed when waiting. Matches the dApp's UI poll cadence.
+   * @param opts.maxWaitMs - Default `360000` (6 min). Max time to wait for
+   *   the oracle before giving up and throwing.
+   *
+   * @returns `{ hash, receipt, mode }` where `mode` is `'settle'` if the round
+   *   was settled with an oracle price, or `'cancel'` if the settle window
+   *   expired and the round was canceled (refunding all bets via subsequent claim).
+   *
+   * @throws If no active round, the round is already settled, the round is
+   *   still in progress, or the oracle stays stuck longer than `maxWaitMs`.
+   *
+   * @example
+   * // Standard bot loop — handles oracle lag automatically. May take several minutes.
+   * await client.updown.eth.advanceRound(0);
+   *
+   * @example
+   * // Tight keeper that wants instant fail/retry
+   * try {
+   *   await client.updown.eth.settleCurrentRound(0); // fire-and-forget
+   * } catch (e) {
+   *   if (e instanceof OracleNotReadyError) {
+   *     // wait, retry on your own schedule
+   *   }
+   * }
+   */
+  async advanceRound(tf, opts = {}) {
+    if (!this.client.walletClient || !this.client.walletClient.account) {
+      throw new Error("Stateful initialization (walletClient) is required for write methods.");
+    }
+    const cur = await this.getCurrentRound(tf);
+    if (!cur) {
+      throw new Error(`No active round for tf=${tf} \u2014 startPrediction has not been called.`);
+    }
+    const { roundId, round } = cur;
+    if (round.outcome !== 0) {
+      throw new Error(`Round ${roundId} is already settled (outcome=${round.outcome}). Nothing to advance.`);
+    }
+    const FINALIZE_WINDOW = 1200n;
+    const now = BigInt(Math.floor(Date.now() / 1e3));
+    if (now <= round.endTime) {
+      const secs = Number(round.endTime - now);
+      throw new Error(`Round ${roundId} is still in progress \u2014 ${secs}s remaining (ends at unix ${round.endTime}).`);
+    }
+    const deadline = round.endTime + FINALIZE_WINDOW;
+    if (now > deadline) {
+      const r2 = await this.cancelCurrentRoundAndStartNext(tf);
+      return { ...r2, mode: "cancel" };
+    }
+    const { pollIntervalMs = 8e3, maxWaitMs = 36e4 } = opts;
+    await this._waitForOracle(round.endTime, pollIntervalMs, maxWaitMs);
+    const r = await this.settleCurrentRound(tf);
+    return { ...r, mode: "settle" };
+  }
+  /**
+   * Polls the Chainlink price feed every `pollIntervalMs` until
+   * `latestRoundData.updatedAt > endTime`. Throws if `maxWaitMs` elapses
+   * without the oracle ticking. Used by `advanceRound` to bridge the
+   * settle path's oracle dependency.
+   */
+  async _waitForOracle(endTime, pollIntervalMs, maxWaitMs) {
+    const priceFeed = await this.client.publicClient.readContract({
+      address: this.address,
+      abi: AUpDown_default.abi,
+      functionName: "priceFeed"
+    });
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const start = Date.now();
+    while (Date.now() - start < maxWaitMs) {
+      const data = await this.client.publicClient.readContract({
+        address: priceFeed,
+        abi: AggregatorV3Interface_default.abi,
+        functionName: "latestRoundData"
+      });
+      const updatedAt = data[3];
+      if (updatedAt > endTime) return;
+      await sleep(pollIntervalMs);
+    }
+    throw new Error(
+      `[advanceRound] Chainlink price feed (${priceFeed}) has not updated past round.endTime (${endTime}) after ${Math.round(maxWaitMs / 1e3)}s of polling. The oracle may be stalled. If we're past round.endTime + 20min, retry \u2014 advanceRound will fall back to cancel.`
+    );
+  }
+  /**
+   * Internal: validate timing for settle / cancel. `mode='settle'` requires
+   * the round to be in the [endTime, endTime+FINALIZE_WINDOW] window;
+   * `mode='cancel'` requires it to be past that window.
+   */
+  async _preCheckRoundTiming(tf, mode) {
+    const cur = await this.getCurrentRound(tf);
+    if (!cur) {
+      throw new Error(`No active round for tf=${tf} \u2014 startPrediction has not been called.`);
+    }
+    const { roundId, round } = cur;
+    if (round.outcome !== 0) {
+      throw new Error(`Round ${roundId} is already settled (outcome=${round.outcome}). Wait for the next round.`);
+    }
+    const FINALIZE_WINDOW = 1200n;
+    const now = BigInt(Math.floor(Date.now() / 1e3));
+    const deadline = round.endTime + FINALIZE_WINDOW;
+    if (mode === "settle") {
+      if (now <= round.endTime) {
+        const secs = Number(round.endTime - now);
+        throw new Error(`Round ${roundId} has not ended yet \u2014 ${secs}s remaining (ends at unix ${round.endTime}).`);
+      }
+      if (now > deadline) {
+        throw new Error(`Settle window expired (deadline was unix ${deadline}). Call cancelCurrentRoundAndStartNext instead to refund and start the next round.`);
+      }
+    } else {
+      if (now <= deadline) {
+        const secs = Number(deadline - now);
+        throw new Error(`Settle window not yet expired \u2014 ${secs}s remaining. Call settleCurrentRound instead until the window closes.`);
+      }
+    }
+  }
+  // --- Writes (admin / CEO-only) ---
+  /** ADMIN. Open round 1 on every timeframe. Idempotent across timeframes. */
+  async startPrediction() {
+    return this._adminWrite("startPrediction", []);
+  }
+  /** ADMIN. Toggle the pause flag. */
+  async setPaused(paused) {
+    return this._adminWrite("setPaused", [paused]);
+  }
+  /**
+   * ADMIN. Emergency cancel + pause: cancels every Pending round, captures
+   * `seedBonus` into `pendingCarryover[tf]`, then sets paused = true.
+   */
+  async panicCancel() {
+    return this._adminWrite("panicCancel", []);
+  }
+  /** ADMIN. Counterpart to panicCancel — unpause and open the next round on each timeframe. */
+  async resumePrediction() {
+    return this._adminWrite("resumePrediction", []);
+  }
+  /** ADMIN. Update the minimum bet size, USDB 18-dec. */
+  async setMinBet(amount) {
+    return this._adminWrite("setMinBet", [amount]);
+  }
+  /** ADMIN. Update the Chainlink price feed address. */
+  async setPriceFeed(newFeed) {
+    return this._adminWrite("setPriceFeed", [newFeed]);
+  }
+  /** ADMIN. Update the USDB token address. */
+  async setUsdb(newUsdb) {
+    return this._adminWrite("setUsdb", [newUsdb]);
+  }
+  /** ADMIN. Update the swap contract address. */
+  async setSwap(newSwap) {
+    return this._adminWrite("setSwap", [newSwap]);
+  }
+  /** ADMIN. Update the wash-trade detection token. */
+  async setWashToken(newToken) {
+    return this._adminWrite("setWashToken", [newToken]);
+  }
+  /** ADMIN. Transfer the CEO role. */
+  async setCEO(newCEO) {
+    return this._adminWrite("setCEO", [newCEO]);
+  }
+  /**
+   * ADMIN — DANGER. Pull USDB from the contract to CEO. For genuinely-stuck
+   * funds only. The SDK does not gate this — caller must be CEO or the on-chain
+   * tx will revert with `NotCEO`.
+   */
+  async emergencyWithdraw(amount) {
+    return this._adminWrite("emergencyWithdraw", [amount]);
+  }
+  async _adminWrite(fnName, args) {
+    if (!this.client.walletClient || !this.client.walletClient.account) {
+      throw new Error("Stateful initialization (walletClient) is required for write methods.");
+    }
+    const { request } = await this.client.publicClient.simulateContract({
+      account: this.client.walletClient.account,
+      address: this.address,
+      abi: AUpDown_default.abi,
+      functionName: fnName,
+      args
+    });
+    const hash = await this.client.writeContract(request);
+    const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
+    await this._syncTx(hash);
+    return { hash, receipt };
+  }
+};
+var UpDownModule = class {
+  btc;
+  eth;
+  bnb;
+  cake;
+  doge;
+  constructor(client, addresses) {
+    for (const asset of KNOWN_UPDOWN_ASSETS) {
+      const addr = addresses[asset];
+      if (addr && addr.toLowerCase() !== ZERO_ADDRESS) {
+        this[asset] = new UpDownAssetModule(client, addr, asset);
+      }
+    }
+  }
+  /** All deployed per-asset modules, in declaration order. */
+  get all() {
+    return KNOWN_UPDOWN_ASSETS.map((a) => this[a]).filter((m) => m !== void 0);
+  }
+  /** Convenience lookup: `client.updown.byAsset('btc')` returns the module or undefined. */
+  byAsset(asset) {
+    return this[asset];
+  }
+};
+
 // src/BasisClient.ts
 var MEGAFUEL_RPC = "https://bsc-megafuel.nodereal.io/";
 function createGaslessTransport(rpcUrl) {
@@ -16923,7 +19150,14 @@ var DEFAULT_ADDRESSES = {
   privateMarket: "0x28675A82ee3c2e6d2C85887Ea587FbDD3E3C86EE",
   reader: "0xF406cA6403c57Ad04c8E13F4ae87b3732daa087d",
   leverage: "0xeffb140d821c5B20EFc66346Cf414EeAC8A8FDB2",
-  taxes: "0x4501d1279273c44dA483842ED17b5451e7d3A601"
+  taxes: "0x4501d1279273c44dA483842ED17b5451e7d3A601",
+  upDown: {
+    btc: "0xFB6B61F0F7A099d32FF161eb1c2e17ca265759fa",
+    eth: "0xE58b057aCe79Ea0CB9724d9a0eF9B8DD8E95b257",
+    bnb: "0x3E7d6c2cCE12A5102B612331a4C85cB9d8553979",
+    cake: "0xbA6c7C5f98d9b55cF072811156d366AD68537256",
+    doge: "0x2Eda68AB78089C83E9998BAa966caa9A1A181945"
+  }
 };
 var BasisClient = class _BasisClient {
   publicClient;
@@ -16948,6 +19182,7 @@ var BasisClient = class _BasisClient {
   leverageSimulator;
   taxes;
   agent;
+  updown;
   // Auth state
   _sessionCookie = null;
   _apiKey = null;
@@ -17027,6 +19262,14 @@ var BasisClient = class _BasisClient {
     this.leverageSimulator = new LeverageSimulatorModule(this, options.leverageAddress || DEFAULT_ADDRESSES.leverage);
     this.taxes = new TaxesModule(this, options.taxesAddress || DEFAULT_ADDRESSES.taxes);
     this.agent = new AgentIdentityModule(this);
+    const udOverrides = options.upDownAddresses || {};
+    this.updown = new UpDownModule(this, {
+      btc: udOverrides.btc ?? DEFAULT_ADDRESSES.upDown.btc,
+      eth: udOverrides.eth ?? DEFAULT_ADDRESSES.upDown.eth,
+      bnb: udOverrides.bnb ?? DEFAULT_ADDRESSES.upDown.bnb,
+      cake: udOverrides.cake ?? DEFAULT_ADDRESSES.upDown.cake,
+      doge: udOverrides.doge ?? DEFAULT_ADDRESSES.upDown.doge
+    });
   }
   /**
    * Async factory method that creates a fully initialized BasisClient.
@@ -17064,36 +19307,51 @@ var BasisClient = class _BasisClient {
         await client.ensureApiKey();
       }
     }
+    let remote = null;
     try {
-      const res = await fetch(`${client.apiDomain}/contracts.json`);
-      if (res.ok) {
-        const remote = await res.json();
-        const mapping = [
-          ["factory", remote.factory, DEFAULT_ADDRESSES.factory],
-          ["swap", remote.swap, DEFAULT_ADDRESSES.swap],
-          ["marketTrading", remote.marketTrading, DEFAULT_ADDRESSES.marketTrading],
-          ["loanHub", remote.loanHub, DEFAULT_ADDRESSES.loanHub],
-          ["vesting", remote.vesting, DEFAULT_ADDRESSES.vesting],
-          ["usdb", remote.usdb, DEFAULT_ADDRESSES.usdb],
-          ["mainToken", remote.mainToken, DEFAULT_ADDRESSES.mainToken],
-          ["staking", remote.staking, DEFAULT_ADDRESSES.staking],
-          ["resolver", remote.resolver, DEFAULT_ADDRESSES.resolver],
-          ["privateMarket", remote.privateMarket, DEFAULT_ADDRESSES.privateMarket],
-          ["reader", remote.reader, DEFAULT_ADDRESSES.reader],
-          ["leverage", remote.leverage, DEFAULT_ADDRESSES.leverage],
-          ["taxes", remote.taxes, DEFAULT_ADDRESSES.taxes]
-        ];
-        const mismatched = mapping.filter(
-          ([, remoteAddr, defaultAddr]) => remoteAddr && remoteAddr.toLowerCase() !== defaultAddr.toLowerCase()
-        );
-        if (mismatched.length > 0) {
-          console.warn(
-            `[basis-sdk] Contract addresses have changed. Please update your SDK to the latest version.
-Mismatched: ${mismatched.map(([name]) => name).join(", ")}`
-          );
+      const res = await fetch(`${client.apiDomain}/contracts.json`, {
+        signal: AbortSignal.timeout(5e3)
+      });
+      if (res.ok) remote = await res.json();
+    } catch {
+    }
+    if (remote) {
+      const mapping = [
+        ["factory", remote.factory, DEFAULT_ADDRESSES.factory],
+        ["swap", remote.swap, DEFAULT_ADDRESSES.swap],
+        ["marketTrading", remote.marketTrading, DEFAULT_ADDRESSES.marketTrading],
+        ["loanHub", remote.loanHub, DEFAULT_ADDRESSES.loanHub],
+        ["vesting", remote.vesting, DEFAULT_ADDRESSES.vesting],
+        ["usdb", remote.usdb, DEFAULT_ADDRESSES.usdb],
+        ["mainToken", remote.mainToken, DEFAULT_ADDRESSES.mainToken],
+        ["staking", remote.staking, DEFAULT_ADDRESSES.staking],
+        ["resolver", remote.resolver, DEFAULT_ADDRESSES.resolver],
+        ["privateMarket", remote.privateMarket, DEFAULT_ADDRESSES.privateMarket],
+        ["reader", remote.reader, DEFAULT_ADDRESSES.reader],
+        ["leverage", remote.leverage, DEFAULT_ADDRESSES.leverage],
+        ["taxes", remote.taxes, DEFAULT_ADDRESSES.taxes]
+      ];
+      if (remote.upDown && typeof remote.upDown === "object") {
+        for (const asset of ["btc", "eth", "bnb", "cake", "doge"]) {
+          const remoteAddr = remote.upDown[asset];
+          if (typeof remoteAddr === "string") {
+            mapping.push([`upDown.${asset}`, remoteAddr, DEFAULT_ADDRESSES.upDown[asset]]);
+          }
         }
       }
-    } catch {
+      const mismatched = mapping.filter(
+        ([, remoteAddr, defaultAddr]) => typeof remoteAddr === "string" && remoteAddr.toLowerCase() !== defaultAddr.toLowerCase()
+      );
+      if (mismatched.length > 0) {
+        const lines = mismatched.map(
+          ([name, remoteAddr, defaultAddr]) => `  ${name}: SDK has ${defaultAddr}, contracts.json has ${remoteAddr}`
+        );
+        throw new Error(
+          `[basis-sdk] Contract address mismatch with ${client.apiDomain}/contracts.json. One side is stale \u2014 either update the SDK (npm i basis-sdk@latest) or update contracts.json on the backend so they agree.
+Mismatched (${mismatched.length}):
+${lines.join("\n")}`
+        );
+      }
     }
     if (options.agent && options.privateKey) {
       const agentConfig = typeof options.agent === "object" ? options.agent : void 0;
@@ -17268,11 +19526,17 @@ export {
   LoansModule,
   MarketReaderModule,
   MarketResolverModule,
+  OracleNotReadyError,
   OrderBookModule,
+  Outcome,
   PredictionMarketsModule,
   PrivateMarketsModule,
+  Side,
   StakingModule,
   TaxesModule,
+  Timeframe,
   TradingModule,
+  UpDownAssetModule,
+  UpDownModule,
   VestingModule
 };

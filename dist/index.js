@@ -357,10 +357,53 @@ const TOOLS = [
     { name: "verify_moltbook_post", description: "Submit a Moltbook post for verification (earns points, max 3/day, 7-day lock-in).", inputSchema: { type: "object", properties: { post_id: { type: "string", description: "Post UUID or URL" } }, required: ["post_id"] } },
     { name: "get_verified_moltbook_posts", description: "List all your verified Moltbook posts.", inputSchema: { type: "object", properties: {} } },
     { name: "sync_transaction", description: "Manually sync a transaction to the backend.", inputSchema: { type: "object", properties: { tx_hash: { type: "string" } }, required: ["tx_hash"] } },
+    // ── Up/Down (BTC/ETH/BNB/CAKE/DOGE) ────────────────
+    { name: "updown_get_round", description: "Get a specific UPDOWN round by id — or omit round_id to get the current round. Returns the full Round struct (startPrice/endPrice in 8-dec, pools/shares/seedBonus in 18-dec USDB, outcome enum 0=Pending,1=BullWins,2=BearWins,3=Canceled). Returns null if no rounds opened yet.", inputSchema: { type: "object", properties: { asset: { type: "string", enum: ["btc", "eth", "bnb", "cake", "doge"] }, tf: { type: "number", description: "Timeframe enum: 0=5m,1=15m,2=1h,3=4h,4=24h" }, round_id: { type: "number", description: "Optional — defaults to currentRoundId(tf)" } }, required: ["asset", "tf"] } },
+    { name: "updown_get_user_bet", description: "Get your bet on a specific UPDOWN round. amount=0 means no bet placed.", inputSchema: { type: "object", properties: { asset: { type: "string", enum: ["btc", "eth", "bnb", "cake", "doge"] }, tf: { type: "number" }, round_id: { type: "number" } }, required: ["asset", "tf", "round_id"] } },
+    { name: "updown_quote_shares", description: "Preview shares minted by a hypothetical bet on the current round. Includes slippage. Returns 0 if no active round.", inputSchema: { type: "object", properties: { asset: { type: "string", enum: ["btc", "eth", "bnb", "cake", "doge"] }, tf: { type: "number" }, side: { type: "string", enum: ["bull", "bear"] }, amount: { type: "number", description: "USDB amount (whole tokens)" } }, required: ["asset", "tf", "side", "amount"] } },
+    { name: "updown_quote_claim", description: "Exact USDB you can claim from a settled round. 0 means nothing to claim (lost / already claimed / pending / no bet).", inputSchema: { type: "object", properties: { asset: { type: "string", enum: ["btc", "eth", "bnb", "cake", "doge"] }, tf: { type: "number" }, round_id: { type: "number" } }, required: ["asset", "tf", "round_id"] } },
+    { name: "updown_bet", description: "Place a bullish or bearish bet on the current UPDOWN round. Auto-approves USDB and pre-checks balance + minBet client-side. Use slippage_percent for an optional minShares guard.", inputSchema: { type: "object", properties: { asset: { type: "string", enum: ["btc", "eth", "bnb", "cake", "doge"] }, tf: { type: "number" }, side: { type: "string", enum: ["bull", "bear"] }, amount: { type: "number", description: "USDB amount (whole tokens)" }, slippage_percent: { type: "number", description: "Optional. If set, throws when projected shares would be > slippage_percent below quoteShares (default: no slippage check)" } }, required: ["asset", "tf", "side", "amount"] } },
+    { name: "updown_claim", description: "Claim winnings or refund from a settled UPDOWN round. Pre-checks via quoteClaimPayout — refuses to send if 0.", inputSchema: { type: "object", properties: { asset: { type: "string", enum: ["btc", "eth", "bnb", "cake", "doge"] }, tf: { type: "number" }, round_id: { type: "number" } }, required: ["asset", "tf", "round_id"] } },
+    { name: "updown_settle", description: "Public settle of an UPDOWN round once it has ended and a valid Chainlink price is available. Anyone can call.", inputSchema: { type: "object", properties: { asset: { type: "string", enum: ["btc", "eth", "bnb", "cake", "doge"] }, tf: { type: "number" } }, required: ["asset", "tf"] } },
+    { name: "updown_cancel_stalled", description: "Public cancel of a stalled UPDOWN round (settle window expired). Anyone can call after endTime + FINALIZE_WINDOW.", inputSchema: { type: "object", properties: { asset: { type: "string", enum: ["btc", "eth", "bnb", "cake", "doge"] }, tf: { type: "number" } }, required: ["asset", "tf"] } },
+    { name: "updown_my_history", description: "Aggregate UPDOWN bet/claim summary for your wallet across every asset (BTC/ETH/BNB/CAKE/DOGE) and all timeframes — totals, win/loss tallies, and embedded activeBets[] / claimableBets[] arrays.", inputSchema: { type: "object", properties: {} } },
+    { name: "updown_list_rounds", description: "Paginated UPDOWN round list for a token, newest-first. Optional tf and outcome filters.", inputSchema: { type: "object", properties: { asset: { type: "string", enum: ["btc", "eth", "bnb", "cake", "doge"] }, tf: { type: "number" }, outcome: { type: "string", enum: ["pending", "bull_wins", "bear_wins", "canceled"] }, cursor: { type: "string", description: "nextCursor from a prior page" }, limit: { type: "number", description: "default 20, max 200" } }, required: ["asset"] } },
+    { name: "updown_bull_probability", description: "Current bull probability for the active UPDOWN round (basis points 0-10000, also returned as percentage).", inputSchema: { type: "object", properties: { asset: { type: "string", enum: ["btc", "eth", "bnb", "cake", "doge"] }, tf: { type: "number", description: "0=5m, 1=15m, 2=1h, 3=4h, 4=24h" } }, required: ["asset", "tf"] } },
+    { name: "updown_quote_current_payout", description: "Estimate your payout if the active UPDOWN round settled now in your favor. Returns 0 if no bet placed.", inputSchema: { type: "object", properties: { asset: { type: "string", enum: ["btc", "eth", "bnb", "cake", "doge"] }, tf: { type: "number" } }, required: ["asset", "tf"] } },
+    { name: "updown_min_bet", description: "Minimum bet amount in USDB for an UPDOWN asset.", inputSchema: { type: "object", properties: { asset: { type: "string", enum: ["btc", "eth", "bnb", "cake", "doge"] } }, required: ["asset"] } },
+    { name: "updown_tf_duration", description: "Round duration in seconds for a timeframe.", inputSchema: { type: "object", properties: { asset: { type: "string", enum: ["btc", "eth", "bnb", "cake", "doge"] }, tf: { type: "number" } }, required: ["asset", "tf"] } },
+    { name: "updown_paused", description: "Check if an UPDOWN asset is paused (writes will revert if true).", inputSchema: { type: "object", properties: { asset: { type: "string", enum: ["btc", "eth", "bnb", "cake", "doge"] } }, required: ["asset"] } },
+    { name: "updown_slippage_threshold", description: "Current slippage threshold in BPS for the active round. Decays from 9500 (95%) at start to 5500 (55%) at end.", inputSchema: { type: "object", properties: { asset: { type: "string", enum: ["btc", "eth", "bnb", "cake", "doge"] }, tf: { type: "number" } }, required: ["asset", "tf"] } },
 ];
 // ============================================================
 // Tool handlers
 // ============================================================
+// Up/Down helpers — shared by the per-asset case handlers below.
+// Single source of truth for the asset list so error messages and validators agree.
+const UPDOWN_ASSETS = ["btc", "eth", "bnb", "cake", "doge"];
+function resolveUpDownAsset(asset) {
+    if (!UPDOWN_ASSETS.includes(asset))
+        throw new Error(`asset must be one of ${UPDOWN_ASSETS.join(", ")} (got ${asset})`);
+    const m = client.updown?.[asset];
+    if (!m)
+        throw new Error(`UPDOWN ${asset} not deployed yet.`);
+    return m;
+}
+function validateTf(tf) {
+    return Number.isInteger(tf) && tf >= 0 && tf <= 4;
+}
+function sideToInt(side) {
+    if (side === "bull")
+        return 1;
+    if (side === "bear")
+        return 2;
+    return 0;
+}
+function validateRoundId(roundId) {
+    // Round ids are 1-indexed positive integers on-chain. Reject 0, fractions,
+    // negatives, strings (BigInt() would throw on most), undefined, NaN.
+    return Number.isInteger(roundId) && roundId >= 1;
+}
 async function handleTool(name, args) {
     try {
         switch (name) {
@@ -744,7 +787,12 @@ async function handleTool(name, args) {
             }
             // ── Module 5: Loans ─────────────────────────────────
             case "take_loan": {
-                const tx = await client.loans.takeLoan(client.mainTokenAddress, resolveToken(args.collateral_token), toRaw(args.amount), BigInt(args.days));
+                const tokenAddr = resolveToken(args.collateral_token);
+                const amount = toRaw(args.amount);
+                const balance = await client.publicClient.readContract({ address: tokenAddr, abi: erc20Abi, functionName: "balanceOf", args: [walletAddress] });
+                if (amount > balance)
+                    return err(`Insufficient collateral balance. Have: ${fromRaw(balance)}, want: ${args.amount}. Tip: prediction-market tokens take a 1.5% tax on buy — use the post-tax balance, not the buy preview.`);
+                const tx = await client.loans.takeLoan(client.mainTokenAddress, tokenAddr, amount, BigInt(args.days));
                 return txResult(tx, { fee_info: "2% origination + 0.005%/day (prepaid)" });
             }
             case "repay_loan": {
@@ -1344,6 +1392,179 @@ async function handleTool(name, args) {
             }
             case "sync_transaction": {
                 return ok(await client.api.syncTransaction(args.tx_hash));
+            }
+            // ── Up/Down ───────────────────────────────────────
+            // Shared validation helpers (close over args; redeclared per case is fine)
+            case "updown_get_round": {
+                const m = resolveUpDownAsset(args.asset);
+                if (!m.address)
+                    return m;
+                if (!validateTf(args.tf))
+                    return err(`tf must be 0-4 (got ${args.tf})`);
+                let roundId;
+                if (args.round_id === undefined || args.round_id === null) {
+                    roundId = await m.currentRoundId(args.tf);
+                }
+                else {
+                    if (!validateRoundId(args.round_id))
+                        return err(`round_id must be a positive integer (got ${JSON.stringify(args.round_id)})`);
+                    roundId = BigInt(args.round_id);
+                }
+                if (roundId === 0n)
+                    return ok(null);
+                const round = await m.getRound(args.tf, roundId);
+                return ok({ roundId: roundId.toString(), round });
+            }
+            case "updown_get_user_bet": {
+                const m = resolveUpDownAsset(args.asset);
+                if (!m.address)
+                    return m;
+                if (!validateTf(args.tf))
+                    return err(`tf must be 0-4 (got ${args.tf})`);
+                if (!validateRoundId(args.round_id))
+                    return err(`round_id must be a positive integer (got ${JSON.stringify(args.round_id)})`);
+                const bet = await m.getUserBet(args.tf, BigInt(args.round_id), walletAddress);
+                return ok(bet);
+            }
+            case "updown_quote_shares": {
+                const m = resolveUpDownAsset(args.asset);
+                if (!m.address)
+                    return m;
+                if (!validateTf(args.tf))
+                    return err(`tf must be 0-4 (got ${args.tf})`);
+                const sideInt = sideToInt(args.side);
+                if (!sideInt)
+                    return err(`side must be "bull" or "bear" (got ${JSON.stringify(args.side)})`);
+                const shares = await m.quoteShares(args.tf, sideInt, toRaw(args.amount));
+                return ok({ shares: fromRaw(shares), sharesRaw: shares.toString() });
+            }
+            case "updown_quote_claim": {
+                const m = resolveUpDownAsset(args.asset);
+                if (!m.address)
+                    return m;
+                if (!validateTf(args.tf))
+                    return err(`tf must be 0-4 (got ${args.tf})`);
+                if (!validateRoundId(args.round_id))
+                    return err(`round_id must be a positive integer (got ${JSON.stringify(args.round_id)})`);
+                const payout = await m.quoteClaimPayout(args.tf, BigInt(args.round_id), walletAddress);
+                return ok({ claimable_usdb: fromRaw(payout), claimable_raw: payout.toString() });
+            }
+            case "updown_bet": {
+                const m = resolveUpDownAsset(args.asset);
+                if (!m.address)
+                    return m;
+                if (!validateTf(args.tf))
+                    return err(`tf must be 0-4 (got ${args.tf})`);
+                const sideInt = sideToInt(args.side);
+                if (!sideInt)
+                    return err(`side must be "bull" or "bear" (got ${JSON.stringify(args.side)})`);
+                const amount = toRaw(args.amount);
+                // Slippage: convert percent (0-100) to BPS so fractional values like 0.5%
+                // round correctly. 0 = "no slippage check"; >100 is invalid. The SDK
+                // _bet path re-quotes internally, so we don't pre-quote here.
+                let minShares = 0n;
+                if (args.slippage_percent !== undefined && args.slippage_percent !== null) {
+                    const slip = Number(args.slippage_percent);
+                    if (!Number.isFinite(slip))
+                        return err(`slippage_percent must be a number (got ${JSON.stringify(args.slippage_percent)})`);
+                    if (slip < 0 || slip > 100)
+                        return err(`slippage_percent must be in [0, 100] (got ${slip})`);
+                    if (slip > 0) {
+                        const projected = await m.quoteShares(args.tf, sideInt, amount);
+                        const keepBps = BigInt(Math.round((100 - slip) * 100)); // e.g. 1.5% -> 9850
+                        minShares = projected * keepBps / 10000n;
+                    }
+                }
+                const tx = sideInt === 1
+                    ? await m.betBull(args.tf, amount, minShares)
+                    : await m.betBear(args.tf, amount, minShares);
+                return txResult(tx, { asset: args.asset, tf: args.tf, side: args.side, amount: args.amount });
+            }
+            case "updown_claim": {
+                const m = resolveUpDownAsset(args.asset);
+                if (!m.address)
+                    return m;
+                if (!validateTf(args.tf))
+                    return err(`tf must be 0-4 (got ${args.tf})`);
+                if (!validateRoundId(args.round_id))
+                    return err(`round_id must be a positive integer (got ${JSON.stringify(args.round_id)})`);
+                const tx = await m.claim(args.tf, BigInt(args.round_id));
+                return txResult(tx, { asset: args.asset, tf: args.tf, round_id: args.round_id });
+            }
+            case "updown_settle": {
+                const m = resolveUpDownAsset(args.asset);
+                if (!m.address)
+                    return m;
+                if (!validateTf(args.tf))
+                    return err(`tf must be 0-4 (got ${args.tf})`);
+                const tx = await m.settleCurrentRound(args.tf);
+                return txResult(tx, { asset: args.asset, tf: args.tf });
+            }
+            case "updown_cancel_stalled": {
+                const m = resolveUpDownAsset(args.asset);
+                if (!m.address)
+                    return m;
+                if (!validateTf(args.tf))
+                    return err(`tf must be 0-4 (got ${args.tf})`);
+                const tx = await m.cancelCurrentRoundAndStartNext(args.tf);
+                return txResult(tx, { asset: args.asset, tf: args.tf });
+            }
+            case "updown_my_history": {
+                return ok(await client.api.getMyUpDown());
+            }
+            case "updown_list_rounds": {
+                if (!UPDOWN_ASSETS.includes(args.asset))
+                    return err(`asset must be one of ${UPDOWN_ASSETS.join(", ")} (got ${args.asset})`);
+                if (args.tf !== undefined && !validateTf(args.tf))
+                    return err(`tf must be 0-4 (got ${args.tf})`);
+                const opts = { token: args.asset };
+                if (args.tf !== undefined)
+                    opts.tf = args.tf;
+                if (args.outcome)
+                    opts.outcome = args.outcome;
+                if (args.cursor)
+                    opts.cursor = args.cursor;
+                if (args.limit !== undefined)
+                    opts.limit = args.limit;
+                return ok(await client.api.getUpDownRounds(opts));
+            }
+            case "updown_bull_probability": {
+                if (!validateTf(args.tf))
+                    return err(`tf must be 0-4 (got ${args.tf})`);
+                const m = resolveUpDownAsset(args.asset);
+                const prob = await m.currentBullProbability(args.tf);
+                return ok({ asset: args.asset, tf: args.tf, bull_probability_bps: Number(prob), bull_probability_pct: Number(prob) / 100 });
+            }
+            case "updown_quote_current_payout": {
+                if (!validateTf(args.tf))
+                    return err(`tf must be 0-4 (got ${args.tf})`);
+                const m = resolveUpDownAsset(args.asset);
+                const payout = await m.quoteCurrentPayout(args.tf, walletAddress);
+                return ok({ asset: args.asset, tf: args.tf, current_payout_usdb: fromRaw(payout) });
+            }
+            case "updown_min_bet": {
+                const m = resolveUpDownAsset(args.asset);
+                const min = await m.minBet();
+                return ok({ asset: args.asset, min_bet_usdb: fromRaw(min) });
+            }
+            case "updown_tf_duration": {
+                if (!validateTf(args.tf))
+                    return err(`tf must be 0-4 (got ${args.tf})`);
+                const m = resolveUpDownAsset(args.asset);
+                const dur = await m.tfDuration(args.tf);
+                return ok({ asset: args.asset, tf: args.tf, duration_seconds: Number(dur) });
+            }
+            case "updown_paused": {
+                const m = resolveUpDownAsset(args.asset);
+                const paused = await m.paused();
+                return ok({ asset: args.asset, paused });
+            }
+            case "updown_slippage_threshold": {
+                if (!validateTf(args.tf))
+                    return err(`tf must be 0-4 (got ${args.tf})`);
+                const m = resolveUpDownAsset(args.asset);
+                const bps = await m.currentSlippageThreshold(args.tf);
+                return ok({ asset: args.asset, tf: args.tf, slippage_bps: Number(bps), slippage_pct: Number(bps) / 100 });
             }
             default: return err(`Unknown tool: ${name}`);
         }

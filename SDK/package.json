@@ -37,6 +37,9 @@
     "url": "https://github.com/Launch-On-Basis/SDK-TS.git"
   },
   "homepage": "https://launchonbasis.com",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
     "sharp": "^0.34.5",
     "siwe": "^3.0.0",
