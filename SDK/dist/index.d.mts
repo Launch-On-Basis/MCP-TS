@@ -230,6 +230,25 @@ interface MyDailyCaps {
     pointCaps: DailyCapEntry<DailyCapPointCategory>[];
     countCaps: DailyCapEntry<DailyCapCountCategory>[];
 }
+type MyOrderStatus = 'ACTIVE' | 'FILLED' | 'CANCELLED';
+interface MyOrder {
+    id: number;
+    orderId: string;
+    marketToken: string;
+    seller: string;
+    outcomeId: number;
+    /** USDB 18-dec wei (decimal string) */
+    amount: string;
+    /** USDB 18-dec wei (decimal string) */
+    pricePerShare: string;
+    status: MyOrderStatus;
+    /** ISO 8601 */
+    createdAt: string;
+}
+interface MyOrders {
+    data: MyOrder[];
+    pagination: Pagination;
+}
 type UpDownAssetKey = 'btc' | 'eth' | 'bnb' | 'cake' | 'doge';
 type UpDownSideStr = 'bull' | 'bear';
 type UpDownOutcomeStr = 'pending' | 'bull_wins' | 'bear_wins' | 'canceled';
@@ -831,6 +850,28 @@ declare class BasisAPI {
      * is 0-100, rounded to 1 decimal, clamped at 100.
      */
     getMyDailyCaps(): Promise<MyDailyCaps>;
+    /**
+     * GET /api/v1/me/orders — paginated list of the authenticated wallet's
+     * order-book orders across all prediction markets. Auth: SIWE session OR
+     * API key.
+     *
+     * @param options.status - filter by order status. Default: all statuses.
+     * @param options.marketToken - narrow to a single market.
+     * @param options.outcomeId - narrow to a single outcome (0-indexed).
+     * @param options.page - default 1.
+     * @param options.limit - default 20.
+     * @returns `{ data: MyOrder[], pagination: { page, limit, total, totalPages } }`.
+     *   Each `MyOrder` exposes `{ id, orderId, marketToken, seller, outcomeId,
+     *   amount, pricePerShare, status, createdAt }` — numeric on-chain values
+     *   are decimal strings (USDB 18-dec); `createdAt` is ISO 8601.
+     */
+    getMyOrders(options?: {
+        status?: MyOrderStatus;
+        marketToken?: string;
+        outcomeId?: number;
+        page?: number;
+        limit?: number;
+    }): Promise<MyOrders>;
     /**
      * GET /api/v1/me/updown — aggregate UPDOWN bet/claim summary for the
      * authenticated wallet across every Up/Down asset and all timeframes.
@@ -1754,6 +1795,19 @@ declare class StakingModule {
      */
     getUserStakeDetails(user: Address): Promise<unknown>;
     /**
+     * Returns the active vault loan for `wallet`, or `null` if there is none.
+     *
+     * Reads `userVaults(wallet)` to discover the user's `hubId` + `hasActiveLoan`
+     * flag, then (if active) calls the loan hub's `getUserLoanDetails`. Note: the
+     * borrower-of-record on the loan hub for vault loans is the staking vault
+     * contract itself, NOT the user wallet — passing `wallet` here would read a
+     * different (typically empty) loan record. The SDK handles this correctly.
+     *
+     * @param wallet - the user's address
+     * @returns FullLoanDetails struct, or `null` if no active vault loan
+     */
+    getVaultLoan(wallet: Address): Promise<unknown>;
+    /**
      * Gets the available STASIS (collateral value minus pledged).
      */
     getAvailableStasis(user: Address): Promise<bigint>;
@@ -2315,6 +2369,29 @@ declare class TaxesModule {
     constructor(client: BasisClient, taxesAddress: Address);
     private _syncTx;
     /**
+     * Returns the dev's accumulated USDB earnings on a specific token, in 18-dec wei.
+     *
+     * The Up/Basis tax model is push-based: tokens accrue dev tax to this counter,
+     * and when `distributeTax(token)` fires (called internally on contract events),
+     * the accumulated amount is paid out to the dev wallets per their basis-point
+     * shares. This getter reads the un-distributed accrued balance.
+     *
+     * @param token - token contract address
+     * @param dev - dev wallet address
+     * @returns accumulated unpaid USDB earnings, 18-dec wei
+     */
+    getCreatorEarnings(token: Address, dev: Address): Promise<bigint>;
+    /**
+     * Returns the dev's lifetime distributed earnings across every token they
+     * have a share on, in 18-dec USDB wei. This is the cumulative paid-out total,
+     * not the un-distributed accrual — for that, use `getCreatorEarnings(token, dev)`
+     * per token.
+     *
+     * @param dev - dev wallet address
+     * @returns lifetime paid-out USDB earnings, 18-dec wei
+     */
+    getDevTotalEarnings(dev: Address): Promise<bigint>;
+    /**
      * Returns the effective tax rate (in basis points) for a specific token and user.
      * @param token - token contract address
      * @param user - user wallet address
@@ -2476,6 +2553,37 @@ declare class AgentIdentityModule {
  *  - `NoValidPriceInWindow` — no Chainlink round in the lookback window had
  *    `updatedAt >= round.endTime`
  */
+/**
+ * Options for `betBull` / `betBear`. Backward-compatible: callers passing a
+ * raw `bigint` as the third argument get the legacy `minShares` shorthand.
+ */
+interface BetOptions {
+    /** Slippage protection — throws if `quoteShares < minShares`. Default `0n` (no check). */
+    minShares?: bigint;
+    /**
+     * If true (default), auto-settle/cancel a stale-pending round before
+     * submitting the bet. Catches the common case where a bot tries to bet on
+     * a round that ended but nobody settled — without auto-advance the contract
+     * rejects with `BettingClosed`.
+     *
+     * Errors during the inner `advanceRound` call are silently swallowed —
+     * the bet's own pre-checks / contract reverts surface anything that matters.
+     */
+    autoAdvance?: boolean;
+    /**
+     * Delay after a successful auto-advance before submitting the bet, in ms.
+     * Lets RPC replication catch up so the next read reflects the new round.
+     * Default `500`. Set to `0` for instant follow-up (own RPC, no LB).
+     */
+    autoAdvanceDelayMs?: number;
+    /**
+     * Cap on how long the inner `advanceRound` polls the Chainlink price feed
+     * before giving up. Lower than `advanceRound`'s own default 6min because
+     * we silently swallow the failure here — don't want to hang bots that
+     * are doing nothing but `betBull` calls. Default `30000` (30s).
+     */
+    autoAdvanceMaxWaitMs?: number;
+}
 declare class OracleNotReadyError extends Error {
     readonly tf: number;
     readonly endTime: bigint;
@@ -2591,22 +2699,45 @@ declare class UpDownAssetModule {
     CEO(): Promise<Address>;
     /**
      * Place a bullish bet on the current round of `tf`. Auto-approves USDB.
-     * Pre-checks `amount >= minBet` and `usdb.balanceOf(user) >= amount` before sending.
      *
-     * @param minShares - optional slippage protection. If non-zero, throws
-     *   client-side when `quoteShares(tf, BULL, amount) < minShares` so the SDK
-     *   never burns gas on a bet that would mint fewer shares than expected.
-     *   Default 0 = no slippage check.
+     * **Default behavior auto-advances stale-pending rounds.** If the current
+     * round is past `endTime` but nobody has settled it yet, the contract
+     * would reject the bet with `BettingClosed`. By default, the SDK detects
+     * this and calls `advanceRound` first, then bets on the freshly-opened
+     * next round. Set `autoAdvance: false` to opt out.
+     *
+     * Pre-checks: `amount >= minBet`, `usdb.balanceOf(user) >= amount`, and
+     * `quoteShares > 0` (catches `ZeroShares` from slippage crush).
+     *
+     * @param tf - Timeframe enum (0=5m, 1=15m, 2=1h, 3=4h, 4=24h)
+     * @param amount - Stake in USDB 18-dec wei
+     * @param opts - Either a bigint (legacy `minShares` shorthand) or a
+     *   `BetOptions` object. Both forms are supported for backward compatibility.
+     *
+     * @example
+     * // Simplest call — auto-advances any stale round, no slippage protection
+     * await client.updown.btc.betBull(0, parseUnits('1', 18));
+     *
+     * @example
+     * // Legacy minShares positional — still works
+     * await client.updown.btc.betBull(0, parseUnits('1', 18), parseUnits('1.95', 18));
+     *
+     * @example
+     * // Full opts — opt out of auto-advance, with slippage and longer RPC settle
+     * await client.updown.btc.betBull(0, parseUnits('1', 18), {
+     *   minShares: parseUnits('1.95', 18),
+     *   autoAdvance: false,
+     * });
      */
-    betBull(tf: number, amount: bigint, minShares?: bigint): Promise<{
+    betBull(tf: number, amount: bigint, opts?: bigint | BetOptions): Promise<{
         hash: `0x${string}`;
         receipt: viem.TransactionReceipt;
     }>;
     /**
      * Place a bearish bet on the current round of `tf`. Auto-approves USDB.
-     * See `betBull` for slippage protection details.
+     * See `betBull` for the full options (auto-advance, slippage protection, etc.).
      */
-    betBear(tf: number, amount: bigint, minShares?: bigint): Promise<{
+    betBear(tf: number, amount: bigint, opts?: bigint | BetOptions): Promise<{
         hash: `0x${string}`;
         receipt: viem.TransactionReceipt;
     }>;
@@ -2955,4 +3086,4 @@ declare class BasisClient {
     }>;
 }
 
-export { type AgentConfig, AgentIdentityModule, AgentSyncError, type ApiKeyInfo, BasisAPI, BasisClient, type BasisClientOptions, type Candle, type Comment, type CursorPagination, type DailyCapCountCategory, type DailyCapEntry, type DailyCapPointCategory, FactoryModule, LeverageSimulatorModule, type LiquidityEntry, LoansModule, MarketReaderModule, MarketResolverModule, type MetadataPayload, type MyDailyCaps, type MyProfile, type MyProjectItem, type MyProjects, type MyReferrals, type MySocial, type MyStats, type MyUpDown, type MyXAccount, OracleNotReadyError, type Order, OrderBookModule, Outcome, type Pagination, PredictionMarketsModule, PrivateMarketsModule, type ProjectUpdatePayload, type ReferralUser, Side, StakingModule, TaxesModule, Timeframe, type Token, type Trade, TradingModule, type UpDownActiveBet, type UpDownAsset, type UpDownAssetKey, UpDownAssetModule, type UpDownClaimableBet, UpDownModule, type UpDownOutcomeStr, type UpDownRound, type UpDownRoundDetail, type UpDownRoundSummary, type UpDownRoundsList, type UpDownSideStr, type UpDownUserBet, type UpdateProfilePayload, type UpdateProfileResult, VestingModule, type WalletTransaction, type WhitelistEntry };
+export { type AgentConfig, AgentIdentityModule, AgentSyncError, type ApiKeyInfo, BasisAPI, BasisClient, type BasisClientOptions, type BetOptions, type Candle, type Comment, type CursorPagination, type DailyCapCountCategory, type DailyCapEntry, type DailyCapPointCategory, FactoryModule, LeverageSimulatorModule, type LiquidityEntry, LoansModule, MarketReaderModule, MarketResolverModule, type MetadataPayload, type MyDailyCaps, type MyOrder, type MyOrderStatus, type MyOrders, type MyProfile, type MyProjectItem, type MyProjects, type MyReferrals, type MySocial, type MyStats, type MyUpDown, type MyXAccount, OracleNotReadyError, type Order, OrderBookModule, Outcome, type Pagination, PredictionMarketsModule, PrivateMarketsModule, type ProjectUpdatePayload, type ReferralUser, Side, StakingModule, TaxesModule, Timeframe, type Token, type Trade, TradingModule, type UpDownActiveBet, type UpDownAsset, type UpDownAssetKey, UpDownAssetModule, type UpDownClaimableBet, UpDownModule, type UpDownOutcomeStr, type UpDownRound, type UpDownRoundDetail, type UpDownRoundSummary, type UpDownRoundsList, type UpDownSideStr, type UpDownUserBet, type UpdateProfilePayload, type UpdateProfileResult, VestingModule, type WalletTransaction, type WhitelistEntry };

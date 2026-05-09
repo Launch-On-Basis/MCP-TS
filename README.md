@@ -2,7 +2,7 @@
 
 # Basis MCP Server
 
-200 tools for the Basis protocol (on BNB Smart Chain) — trading, token creation, prediction markets, staking, loans, vesting, order books, taxes, social, BTC/ETH/BNB/CAKE/DOGE up/down betting, and more. Works with Claude Desktop, Claude Code, and any MCP-compatible client.
+204 tools for the Basis protocol (on BNB Smart Chain) — trading, token creation, prediction markets, staking, loans, vesting, order books, taxes, social, BTC/ETH/BNB/CAKE/DOGE up/down betting, and more. Works with Claude Desktop, Claude Code, and any MCP-compatible client.
 
 The SDK is bundled inside — no separate installation required.
 
@@ -69,7 +69,7 @@ Open a new chat and ask:
 | `BASIS_PRIVATE_KEY` | Yes | BNB Smart Chain wallet private key (0x-prefixed) |
 | `BASIS_API_KEY` | No | Basis API key (starts with `bsk_`). Shown once at creation — save it. If omitted, auto-provisioned on first run via SIWE. Required on subsequent runs if a key already exists on the server. |
 
-## Tools (200)
+## Tools (204)
 
 ### Trading (8)
 | Tool | Type | Description |
@@ -119,7 +119,7 @@ Open a new chat and ask:
 | `buy_orders_and_contract` | write | Buy from order book + AMM in one tx. |
 | `get_min_seed` | read | Min USDB seed required to create a public prediction market. |
 
-### Staking & Vault (6)
+### Staking & Vault (7)
 | Tool | Type | Description |
 |------|------|-------------|
 | `stake_stasis` | write | Multi-step: buy STASIS, wrap to wSTASIS, lock. |
@@ -127,6 +127,7 @@ Open a new chat and ask:
 | `vault_borrow` | write | Borrow USDB against locked wSTASIS. |
 | `vault_repay` | write | Repay vault loan. |
 | `get_vault_status` | read | Full vault position status. |
+| `get_vault_loan` | read | Full loan details for an active vault loan. Returns null if none. |
 | `extend_loan` | write | Extend vault or hub loan. |
 
 ### Loans (8)
@@ -141,7 +142,7 @@ Open a new chat and ask:
 | `claim_liquidation` | write | Claim remaining collateral from expired loan. |
 | `partial_loan_sell` | write | Partially sell hub loan collateral. |
 
-### Portfolio & Data (21)
+### Portfolio & Data (22)
 | Tool | Type | Description |
 |------|------|-------------|
 | `get_balances` | read | Wallet balances (USDB, STASIS, wSTASIS, factory tokens). |
@@ -158,6 +159,7 @@ Open a new chat and ask:
 | `get_my_projects` | read | Your created tokens and markets. |
 | `get_my_referrals` | read | Your referral data. |
 | `get_my_daily_caps` | read | Today's cap-fill % for `pointCaps` (trading, prediction, creator, positions) and `countCaps` (social_x, social_moltbook). Includes `resetsInSeconds`. |
+| `get_my_orders` | read | Your order book history. Paginated, optional status/market/outcome filters. |
 | `get_whitelist` | read | View whitelist for a frozen token. |
 | `get_token_comments` | read | Comments on a token. |
 | `get_loan_events` | read | Loan event history. |
@@ -212,7 +214,7 @@ Open a new chat and ask:
 | `get_buy_order_amounts_out` | read | Amounts out for buying an order. |
 | `get_orders` | read | List orders for a market. |
 
-### Taxes (8)
+### Taxes (10)
 | Tool | Type | Description |
 |------|------|-------------|
 | `get_tax_rate` | read | Tax rate for a token + wallet. |
@@ -223,6 +225,8 @@ Open a new chat and ask:
 | `end_surge_tax` | write | End surge tax. |
 | `add_dev_share` | write | Add dev fee share. |
 | `remove_dev_share` | write | Remove dev fee share. |
+| `get_creator_earnings` | read | Un-distributed accrued USDB earnings for a dev on a specific token. |
+| `get_dev_total_earnings` | read | Lifetime distributed USDB earnings across every token a dev has a share on. |
 
 ### The Reef (14)
 | Tool | Type | Description |

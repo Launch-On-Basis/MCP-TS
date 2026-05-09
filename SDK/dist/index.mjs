@@ -802,6 +802,32 @@ var BasisAPI = class {
     const res = await this.fetchWithAuth("/api/v1/me/daily-caps");
     return res.json();
   }
+  /**
+   * GET /api/v1/me/orders — paginated list of the authenticated wallet's
+   * order-book orders across all prediction markets. Auth: SIWE session OR
+   * API key.
+   *
+   * @param options.status - filter by order status. Default: all statuses.
+   * @param options.marketToken - narrow to a single market.
+   * @param options.outcomeId - narrow to a single outcome (0-indexed).
+   * @param options.page - default 1.
+   * @param options.limit - default 20.
+   * @returns `{ data: MyOrder[], pagination: { page, limit, total, totalPages } }`.
+   *   Each `MyOrder` exposes `{ id, orderId, marketToken, seller, outcomeId,
+   *   amount, pricePerShare, status, createdAt }` — numeric on-chain values
+   *   are decimal strings (USDB 18-dec); `createdAt` is ISO 8601.
+   */
+  async getMyOrders(options) {
+    const params = new URLSearchParams();
+    if (options?.status) params.set("status", options.status);
+    if (options?.marketToken) params.set("marketToken", options.marketToken);
+    if (options?.outcomeId !== void 0) params.set("outcomeId", String(options.outcomeId));
+    if (options?.page !== void 0) params.set("page", String(options.page));
+    if (options?.limit !== void 0) params.set("limit", String(options.limit));
+    const qs = params.toString();
+    const res = await this.fetchWithAuth(`/api/v1/me/orders${qs ? `?${qs}` : ""}`);
+    return res.json();
+  }
   // -----------------------------------------------------------------------
   // Up/Down
   // -----------------------------------------------------------------------
@@ -10352,6 +10378,29 @@ var StakingModule = class {
     });
   }
   /**
+   * Returns the active vault loan for `wallet`, or `null` if there is none.
+   *
+   * Reads `userVaults(wallet)` to discover the user's `hubId` + `hasActiveLoan`
+   * flag, then (if active) calls the loan hub's `getUserLoanDetails`. Note: the
+   * borrower-of-record on the loan hub for vault loans is the staking vault
+   * contract itself, NOT the user wallet — passing `wallet` here would read a
+   * different (typically empty) loan record. The SDK handles this correctly.
+   *
+   * @param wallet - the user's address
+   * @returns FullLoanDetails struct, or `null` if no active vault loan
+   */
+  async getVaultLoan(wallet) {
+    const vault = await this.client.publicClient.readContract({
+      address: this.stakingAddress,
+      abi: AStasisVault_default.abi,
+      functionName: "userVaults",
+      args: [wallet]
+    });
+    const [, , hubId, hasActiveLoan] = vault;
+    if (!hasActiveLoan) return null;
+    return this.client.loans.getUserLoanDetails(this.stakingAddress, hubId);
+  }
+  /**
    * Gets the available STASIS (collateral value minus pledged).
    */
   async getAvailableStasis(user) {
@@ -16523,6 +16572,43 @@ var TaxesModule = class {
     await this.client.api.syncTransaction(txHash);
   }
   /**
+   * Returns the dev's accumulated USDB earnings on a specific token, in 18-dec wei.
+   *
+   * The Up/Basis tax model is push-based: tokens accrue dev tax to this counter,
+   * and when `distributeTax(token)` fires (called internally on contract events),
+   * the accumulated amount is paid out to the dev wallets per their basis-point
+   * shares. This getter reads the un-distributed accrued balance.
+   *
+   * @param token - token contract address
+   * @param dev - dev wallet address
+   * @returns accumulated unpaid USDB earnings, 18-dec wei
+   */
+  async getCreatorEarnings(token, dev) {
+    return this.client.publicClient.readContract({
+      address: this.taxesAddress,
+      abi: ATaxes_default.abi,
+      functionName: "tokenDevEarnings",
+      args: [token, dev]
+    });
+  }
+  /**
+   * Returns the dev's lifetime distributed earnings across every token they
+   * have a share on, in 18-dec USDB wei. This is the cumulative paid-out total,
+   * not the un-distributed accrual — for that, use `getCreatorEarnings(token, dev)`
+   * per token.
+   *
+   * @param dev - dev wallet address
+   * @returns lifetime paid-out USDB earnings, 18-dec wei
+   */
+  async getDevTotalEarnings(dev) {
+    return this.client.publicClient.readContract({
+      address: this.taxesAddress,
+      abi: ATaxes_default.abi,
+      functionName: "devTotalEarnings",
+      args: [dev]
+    });
+  }
+  /**
    * Returns the effective tax rate (in basis points) for a specific token and user.
    * @param token - token contract address
    * @param user - user wallet address
@@ -18459,6 +18545,17 @@ var AggregatorV3Interface_default = {
 };
 
 // src/modules/UpDown.ts
+function normalizeBetOptions(opts) {
+  if (typeof opts === "bigint") {
+    return { minShares: opts, autoAdvance: true, autoAdvanceDelayMs: 500, autoAdvanceMaxWaitMs: 3e4 };
+  }
+  return {
+    minShares: opts.minShares ?? 0n,
+    autoAdvance: opts.autoAdvance ?? true,
+    autoAdvanceDelayMs: opts.autoAdvanceDelayMs ?? 500,
+    autoAdvanceMaxWaitMs: opts.autoAdvanceMaxWaitMs ?? 3e4
+  };
+}
 var OracleNotReadyError = class extends Error {
   tf;
   endTime;
@@ -18694,28 +18791,76 @@ var UpDownAssetModule = class {
   // --- Writes (user) ---
   /**
    * Place a bullish bet on the current round of `tf`. Auto-approves USDB.
-   * Pre-checks `amount >= minBet` and `usdb.balanceOf(user) >= amount` before sending.
    *
-   * @param minShares - optional slippage protection. If non-zero, throws
-   *   client-side when `quoteShares(tf, BULL, amount) < minShares` so the SDK
-   *   never burns gas on a bet that would mint fewer shares than expected.
-   *   Default 0 = no slippage check.
+   * **Default behavior auto-advances stale-pending rounds.** If the current
+   * round is past `endTime` but nobody has settled it yet, the contract
+   * would reject the bet with `BettingClosed`. By default, the SDK detects
+   * this and calls `advanceRound` first, then bets on the freshly-opened
+   * next round. Set `autoAdvance: false` to opt out.
+   *
+   * Pre-checks: `amount >= minBet`, `usdb.balanceOf(user) >= amount`, and
+   * `quoteShares > 0` (catches `ZeroShares` from slippage crush).
+   *
+   * @param tf - Timeframe enum (0=5m, 1=15m, 2=1h, 3=4h, 4=24h)
+   * @param amount - Stake in USDB 18-dec wei
+   * @param opts - Either a bigint (legacy `minShares` shorthand) or a
+   *   `BetOptions` object. Both forms are supported for backward compatibility.
+   *
+   * @example
+   * // Simplest call — auto-advances any stale round, no slippage protection
+   * await client.updown.btc.betBull(0, parseUnits('1', 18));
+   *
+   * @example
+   * // Legacy minShares positional — still works
+   * await client.updown.btc.betBull(0, parseUnits('1', 18), parseUnits('1.95', 18));
+   *
+   * @example
+   * // Full opts — opt out of auto-advance, with slippage and longer RPC settle
+   * await client.updown.btc.betBull(0, parseUnits('1', 18), {
+   *   minShares: parseUnits('1.95', 18),
+   *   autoAdvance: false,
+   * });
    */
-  async betBull(tf, amount, minShares = 0n) {
-    return this._bet(tf, Side.BULL, amount, minShares, "betBull");
+  async betBull(tf, amount, opts = 0n) {
+    return this._bet(tf, Side.BULL, amount, normalizeBetOptions(opts), "betBull");
   }
   /**
    * Place a bearish bet on the current round of `tf`. Auto-approves USDB.
-   * See `betBull` for slippage protection details.
+   * See `betBull` for the full options (auto-advance, slippage protection, etc.).
    */
-  async betBear(tf, amount, minShares = 0n) {
-    return this._bet(tf, Side.BEAR, amount, minShares, "betBear");
+  async betBear(tf, amount, opts = 0n) {
+    return this._bet(tf, Side.BEAR, amount, normalizeBetOptions(opts), "betBear");
   }
-  async _bet(tf, side, amount, minShares, fnName) {
+  async _bet(tf, side, amount, opts, fnName) {
     if (!this.client.walletClient || !this.client.walletClient.account) {
       throw new Error("Stateful initialization (walletClient) is required for write methods.");
     }
     const user = this.client.walletClient.account.address;
+    if (opts.autoAdvance) {
+      try {
+        const cur = await this.getCurrentRound(tf);
+        if (cur && cur.round.outcome === 0) {
+          const now = BigInt(Math.floor(Date.now() / 1e3));
+          if (now > cur.round.endTime) {
+            await this.advanceRound(tf, { maxWaitMs: opts.autoAdvanceMaxWaitMs });
+            if (opts.autoAdvanceDelayMs > 0) {
+              await new Promise((r) => setTimeout(r, opts.autoAdvanceDelayMs));
+            }
+          }
+        }
+      } catch (e) {
+        const errName = e?.cause?.data?.errorName ?? "";
+        const msg = e?.message ?? "";
+        const isExpectedRace = (
+          // Settle attempt revert from a stale oracle (typed via settleCurrentRound)
+          e instanceof OracleNotReadyError || // Inner advanceRound's _waitForOracle gave up after autoAdvanceMaxWaitMs
+          /Chainlink price feed .* has not updated/.test(msg) || // Contract reverts that mean someone else advanced first / state changed mid-flight
+          errName === "RoundAlreadySettled" || errName === "TooEarlyToSettle" || errName === "NoActiveRound" || // Pre-check ValueErrors raised before any tx hit chain
+          /already settled|still in progress|Settle window|No active round/.test(msg)
+        );
+        if (!isExpectedRace) throw e;
+      }
+    }
     const min = await this.minBet();
     if (amount < min) {
       throw new Error(`Bet amount (${amount}) is below minBet (${min} wei = ${Number(min) / 1e18} USDB).`);
@@ -18735,8 +18880,8 @@ var UpDownAssetModule = class {
         "Bet would mint 0 shares due to pool skew + slippage. Consider betting the underdog side or waiting for the round to balance."
       );
     }
-    if (minShares > 0n && projected < minShares) {
-      throw new Error(`Slippage: quoteShares would mint ${projected} shares, below minShares (${minShares}).`);
+    if (opts.minShares > 0n && projected < opts.minShares) {
+      throw new Error(`Slippage: quoteShares would mint ${projected} shares, below minShares (${opts.minShares}).`);
     }
     await this._approveUsdbIfNeeded(amount);
     const { request } = await this.client.publicClient.simulateContract({

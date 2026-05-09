@@ -3,13 +3,13 @@
 /**
  * Basis MCP Server — 80+ tools across 11 modules
  * Built from BASIS_MCP_TOOL_SPEC.md + full SDK coverage
- * Uses real basis-sdk-js (viem-based)
+ * Uses real basis-sdk (viem-based)
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 const index_js_1 = require("@modelcontextprotocol/sdk/server/index.js");
 const stdio_js_1 = require("@modelcontextprotocol/sdk/server/stdio.js");
 const types_js_1 = require("@modelcontextprotocol/sdk/types.js");
-const basis_sdk_js_1 = require("basis-sdk-js");
+const basis_sdk_1 = require("basis-sdk");
 const viem_1 = require("viem");
 const fs_1 = require("fs");
 const path_1 = require("path");
@@ -62,7 +62,7 @@ async function fetchContractAddresses() {
 async function initClient() {
     await fetchContractAddresses();
     try {
-        client = await basis_sdk_js_1.BasisClient.create({
+        client = await basis_sdk_1.BasisClient.create({
             privateKey: PRIVATE_KEY,
             ...(process.env.BASIS_API_KEY ? { apiKey: process.env.BASIS_API_KEY } : {}),
         });
@@ -71,7 +71,7 @@ async function initClient() {
         if (e?.message?.includes("API key already exists") && !process.env.BASIS_API_KEY) {
             console.error("API key exists on server but not provided. Set BASIS_API_KEY env var. Retrying without API key provisioning...");
             // Create without SIWE API key provisioning — session cookie still works for most calls
-            client = new basis_sdk_js_1.BasisClient({ privateKey: PRIVATE_KEY });
+            client = new basis_sdk_1.BasisClient({ privateKey: PRIVATE_KEY });
             await client.authenticate(client.walletClient.account.address);
         }
         else {
@@ -192,6 +192,7 @@ const TOOLS = [
     { name: "vault_borrow", description: "Borrow USDB against locked wSTASIS. 2% + 0.005%/day.", inputSchema: { type: "object", properties: { amount_stasis: { type: "number", description: "STASIS amount to borrow against" }, days: { type: "number", description: "Loan duration" } }, required: ["amount_stasis", "days"] } },
     { name: "vault_repay", description: "Repay vault loan.", inputSchema: { type: "object", properties: {} } },
     { name: "get_vault_status", description: "Complete vault position status.", inputSchema: { type: "object", properties: {} } },
+    { name: "get_vault_loan", description: "Get full loan details for an active vault loan. Handles the vault-as-borrower indirection automatically. Returns null if no active vault loan.", inputSchema: { type: "object", properties: { wallet: { type: "string", description: "User wallet address (default: your wallet)" } } } },
     { name: "extend_loan", description: "Extend vault or hub loan. ~400x cheaper than new loan.", inputSchema: { type: "object", properties: { loan_type: { type: "string", enum: ["vault", "hub"] }, hub_id: { type: "number", description: "Required for hub" }, days: { type: "number" }, pay_in_stable: { type: "boolean", description: "Pay extension fee in USDB (default: true)" }, refinance: { type: "boolean" } }, required: ["loan_type", "days"] } },
     // ── Module 5: Loans (8) ───────────────────────────────
     { name: "take_loan", description: "Loan against any token. No price liquidation. For STASIS prefer vault_borrow.", inputSchema: { type: "object", properties: { collateral_token: { type: "string", description: "Token name or address" }, amount: { type: "number", description: "Collateral amount" }, days: { type: "number", description: "Duration (min 10)" } }, required: ["collateral_token", "amount", "days"] } },
@@ -217,6 +218,7 @@ const TOOLS = [
     { name: "get_public_profile", description: "Get public profile for a wallet.", inputSchema: { type: "object", properties: { wallet: { type: "string" } }, required: ["wallet"] } },
     { name: "get_my_projects", description: "Get your created tokens and markets.", inputSchema: { type: "object", properties: {} } },
     { name: "get_my_referrals", description: "Get your referral data.", inputSchema: { type: "object", properties: {} } },
+    { name: "get_my_orders", description: "Get your order book history. Paginated with optional status/market/outcome filters.", inputSchema: { type: "object", properties: { status: { type: "string", description: "Filter by status (e.g. open, filled, canceled)" }, market_token: { type: "string", description: "Filter to a specific market" }, outcome_id: { type: "number", description: "Narrow to a single outcome (0-indexed)" }, page: { type: "number" }, limit: { type: "number" } } } },
     { name: "get_my_daily_caps", description: "Today's cap-fill percentages for the authenticated wallet. Returns { date, resetsInSeconds, pointCaps[4]: trading|prediction|creator|positions, countCaps[2]: social_x|social_moltbook }. Each percent is 0-100. Caps reset at 00:00 UTC.", inputSchema: { type: "object", properties: {} } },
     { name: "get_whitelist", description: "View whitelist for a frozen token.", inputSchema: { type: "object", properties: { token: { type: "string" }, wallet: { type: "string", description: "Filter by wallet" }, limit: { type: "number" } }, required: ["token"] } },
     { name: "get_token_comments", description: "Get comments on a token.", inputSchema: { type: "object", properties: { token: { type: "string" }, limit: { type: "number" } }, required: ["token"] } },
@@ -271,6 +273,8 @@ const TOOLS = [
     { name: "end_surge_tax", description: "End surge tax on your token.", inputSchema: { type: "object", properties: { token: { type: "string" } }, required: ["token"] } },
     { name: "add_dev_share", description: "Add dev fee share to a wallet for your token.", inputSchema: { type: "object", properties: { token: { type: "string" }, wallet: { type: "string" }, basis_points: { type: "number", description: "Share in basis points" } }, required: ["token", "wallet", "basis_points"] } },
     { name: "remove_dev_share", description: "Remove dev fee share from a wallet.", inputSchema: { type: "object", properties: { token: { type: "string" }, wallet: { type: "string" } }, required: ["token", "wallet"] } },
+    { name: "get_creator_earnings", description: "Get un-distributed accrued USDB earnings for a dev on a specific token. Reads the pending balance before next distribution.", inputSchema: { type: "object", properties: { token: { type: "string", description: "Token contract address" }, dev: { type: "string", description: "Dev wallet address (default: your wallet)" } }, required: ["token"] } },
+    { name: "get_dev_total_earnings", description: "Get a dev's lifetime distributed USDB earnings across every token they have a share on.", inputSchema: { type: "object", properties: { dev: { type: "string", description: "Dev wallet address (default: your wallet)" } } } },
     // ── Module 11: Utility (2) ─────────────────────────────
     // ── Module 12: Reef (7) ─────────────────────────────
     { name: "get_reef_feed", description: "Get reef posts feed.", inputSchema: { type: "object", properties: { section: { type: "string", description: "Feed section (e.g. 'general')" }, limit: { type: "number" } } } },
@@ -773,6 +777,11 @@ async function handleTool(name, args) {
                 const available = await client.staking.getAvailableStasis(walletAddress);
                 return ok({ liquid_shares: fromRaw(raw[0]), locked_shares: fromRaw(raw[1]), total_shares: fromRaw(raw[2]), total_stasis_value: fromRaw(raw[3]), available_to_borrow: fromRaw(available), has_active_loan: raw[1] > 0n });
             }
+            case "get_vault_loan": {
+                const w = (args.wallet || walletAddress);
+                const loan = await client.staking.getVaultLoan(w);
+                return ok({ wallet: w, loan });
+            }
             case "extend_loan": {
                 const refinance = args.refinance || false;
                 const payInStable = args.pay_in_stable !== false;
@@ -924,6 +933,20 @@ async function handleTool(name, args) {
             }
             case "get_my_referrals": {
                 return ok(await client.api.getMyReferrals());
+            }
+            case "get_my_orders": {
+                const opts = {};
+                if (args.status)
+                    opts.status = args.status;
+                if (args.market_token)
+                    opts.marketToken = args.market_token;
+                if (args.outcome_id !== undefined)
+                    opts.outcomeId = args.outcome_id;
+                if (args.page !== undefined)
+                    opts.page = args.page;
+                if (args.limit !== undefined)
+                    opts.limit = args.limit;
+                return ok(await client.api.getMyOrders(opts));
             }
             case "get_my_daily_caps": {
                 return ok(await client.api.getMyDailyCaps());
@@ -1111,6 +1134,16 @@ async function handleTool(name, args) {
             case "remove_dev_share": {
                 const tx = await client.taxes.removeDevShare(args.token, args.wallet);
                 return txResult(tx);
+            }
+            case "get_creator_earnings": {
+                const dev = (args.dev || walletAddress);
+                const earnings = await client.taxes.getCreatorEarnings(args.token, dev);
+                return ok({ token: args.token, dev, accrued_usdb: fromRaw(earnings) });
+            }
+            case "get_dev_total_earnings": {
+                const dev = (args.dev || walletAddress);
+                const total = await client.taxes.getDevTotalEarnings(dev);
+                return ok({ dev, lifetime_usdb: fromRaw(total) });
             }
             // ── Module 11: Utility ─────────────────────────────
             // ── Module 12: Reef ───────────────────────────────
