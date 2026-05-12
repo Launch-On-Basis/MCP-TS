@@ -1281,6 +1281,28 @@ declare class TradingModule {
         receipt: viem.TransactionReceipt;
     }>;
     /**
+     * Claims the residual tokens left over after a leverage position was
+     * liquidated. Calls `MAIN_TOKEN.ClaimLiquidation(loanId, true)` directly —
+     * leverage liquidations bypass the loan hub (the hub's `claimLiquidation`
+     * hardcodes `isLeverage = false`), so this is the only on-chain path to
+     * recover leverage liquidation residue.
+     *
+     * Pre-checks (cheap reads to avoid wasted gas):
+     *  - The leverage position must exist
+     *  - The position must be inactive (`!active`) — i.e. already liquidated
+     *  - `liquidationClaim > 0` — there's actually something to recover
+     *
+     * For hub-loan liquidation claims use `client.loans.claimLiquidation(hubId)`
+     * instead. For vault (staking) liquidation use `client.staking.settleLiquidation()`.
+     *
+     * @param loanId - the leverage position id (NOT the loan hub's hubId)
+     * @returns `{ hash, receipt }`
+     */
+    claimLeverageLiquidation(loanId: bigint): Promise<{
+        hash: `0x${string}`;
+        receipt: viem.TransactionReceipt;
+    }>;
+    /**
      * Sells a percentage of the user's token balance.
      * @param tokenAddress — address of the token to sell
      * @param percentage — integer 1-100

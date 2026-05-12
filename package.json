@@ -2,7 +2,7 @@
   "name": "@basis-markets/mcp-server",
   "version": "1.0.0",
   "license": "Elastic-2.0",
-  "description": "Basis MCP Server — 204 tools for trading, token creation, prediction markets, staking, loans, vesting, BTC/ETH/BNB/CAKE/DOGE up/down betting & more",
+  "description": "Basis MCP Server — 205 tools for trading, token creation, prediction markets, staking, loans, vesting, BTC/ETH/BNB/CAKE/DOGE up/down betting & more",
   "main": "dist/index.js",
   "bin": {
     "basis-mcp-server": "dist/index.js"

@@ -202,6 +202,7 @@ const TOOLS = [
     { name: "get_user_loan_count", description: "Count of loans for the wallet.", inputSchema: { type: "object", properties: {} } },
     { name: "increase_loan_collateral", description: "Add collateral without new origination fee.", inputSchema: { type: "object", properties: { loan_type: { type: "string", enum: ["hub", "vault"] }, hub_id: { type: "number" }, amount: { type: "number" } }, required: ["loan_type", "amount"] } },
     { name: "claim_liquidation", description: "Claim remaining collateral from expired loan.", inputSchema: { type: "object", properties: { loan_type: { type: "string", enum: ["hub", "vault"] }, hub_id: { type: "number" } }, required: ["loan_type"] } },
+    { name: "claim_leverage_liquidation", description: "Claim USDB residue from a liquidated leverage position. Position must be inactive (already liquidated) and have a non-zero claim. Uses loanId (leverage position id), NOT hubId.", inputSchema: { type: "object", properties: { loan_id: { type: "number", description: "Leverage position ID (from get_leverage_positions)" } }, required: ["loan_id"] } },
     { name: "partial_loan_sell", description: "Partially sell hub loan collateral. 10% increments.", inputSchema: { type: "object", properties: { hub_id: { type: "number" }, percentage: { type: "number", description: "10-100, divisible by 10" } }, required: ["hub_id", "percentage"] } },
     // ── Module 6: Portfolio & Data ──────────────────────────
     { name: "get_balances", description: "Wallet balances — USDB, STASIS, wSTASIS, factory tokens.", inputSchema: { type: "object", properties: {} } },
@@ -840,6 +841,10 @@ async function handleTool(name, args) {
                 }
                 const tx = await client.staking.settleLiquidation();
                 return txResult(tx);
+            }
+            case "claim_leverage_liquidation": {
+                const tx = await client.trading.claimLeverageLiquidation(BigInt(args.loan_id));
+                return txResult(tx, { loan_id: args.loan_id });
             }
             case "partial_loan_sell": {
                 if (args.percentage % 10 !== 0)

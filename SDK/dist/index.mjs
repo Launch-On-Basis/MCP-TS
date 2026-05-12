@@ -3800,7 +3800,8 @@ var IERC20_default = {
 import { getAddress as getAddress2 } from "viem";
 var leverageAbi = [
   { "inputs": [{ "name": "", "type": "address" }], "name": "leverageCount", "outputs": [{ "name": "", "type": "uint256" }], "stateMutability": "view", "type": "function" },
-  { "inputs": [{ "name": "", "type": "address" }, { "name": "", "type": "uint256" }], "name": "leverages", "outputs": [{ "name": "user", "type": "address" }, { "name": "token", "type": "address" }, { "name": "collateralAmount", "type": "uint256" }, { "name": "liquidatedAmount", "type": "uint256" }, { "name": "fullAmount", "type": "uint256" }, { "name": "borrowedAmount", "type": "uint256" }, { "name": "liquidationTime", "type": "uint256" }, { "name": "liquidationClaim", "type": "uint256" }, { "name": "isLiquidated", "type": "bool" }, { "name": "active", "type": "bool" }, { "name": "creationTime", "type": "uint256" }, { "name": "timeOfClosure", "type": "uint256" }, { "name": "leverage", "type": "tuple", "components": [{ "name": "leverageBuyAmount", "type": "uint256" }, { "name": "cashedOut", "type": "uint256" }] }], "stateMutability": "view", "type": "function" }
+  { "inputs": [{ "name": "", "type": "address" }, { "name": "", "type": "uint256" }], "name": "leverages", "outputs": [{ "name": "user", "type": "address" }, { "name": "token", "type": "address" }, { "name": "collateralAmount", "type": "uint256" }, { "name": "liquidatedAmount", "type": "uint256" }, { "name": "fullAmount", "type": "uint256" }, { "name": "borrowedAmount", "type": "uint256" }, { "name": "liquidationTime", "type": "uint256" }, { "name": "liquidationClaim", "type": "uint256" }, { "name": "isLiquidated", "type": "bool" }, { "name": "active", "type": "bool" }, { "name": "creationTime", "type": "uint256" }, { "name": "timeOfClosure", "type": "uint256" }, { "name": "leverage", "type": "tuple", "components": [{ "name": "leverageBuyAmount", "type": "uint256" }, { "name": "cashedOut", "type": "uint256" }] }], "stateMutability": "view", "type": "function" },
+  { "inputs": [{ "name": "loanId", "type": "uint256" }, { "name": "isLeverage", "type": "bool" }], "name": "ClaimLiquidation", "outputs": [{ "name": "", "type": "uint256" }], "stateMutability": "nonpayable", "type": "function" }
 ];
 var TradingModule = class {
   client;
@@ -4007,6 +4008,56 @@ var TradingModule = class {
       abi: ASwap_default.abi,
       functionName: "partialLoanSell",
       args: [loanId, percentage, isLeverage, minOut]
+    });
+    const hash = await this.client.writeContract(request);
+    const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });
+    await this._syncTx(hash);
+    return { hash, receipt };
+  }
+  /**
+   * Claims the residual tokens left over after a leverage position was
+   * liquidated. Calls `MAIN_TOKEN.ClaimLiquidation(loanId, true)` directly —
+   * leverage liquidations bypass the loan hub (the hub's `claimLiquidation`
+   * hardcodes `isLeverage = false`), so this is the only on-chain path to
+   * recover leverage liquidation residue.
+   *
+   * Pre-checks (cheap reads to avoid wasted gas):
+   *  - The leverage position must exist
+   *  - The position must be inactive (`!active`) — i.e. already liquidated
+   *  - `liquidationClaim > 0` — there's actually something to recover
+   *
+   * For hub-loan liquidation claims use `client.loans.claimLiquidation(hubId)`
+   * instead. For vault (staking) liquidation use `client.staking.settleLiquidation()`.
+   *
+   * @param loanId - the leverage position id (NOT the loan hub's hubId)
+   * @returns `{ hash, receipt }`
+   */
+  async claimLeverageLiquidation(loanId) {
+    if (!this.client.walletClient || !this.client.walletClient.account) {
+      throw new Error("Stateful initialization (walletClient) is required for write methods.");
+    }
+    const user = this.client.walletClient.account.address;
+    const pos = await this.client.publicClient.readContract({
+      address: this.client.mainTokenAddress,
+      abi: leverageAbi,
+      functionName: "leverages",
+      args: [user, loanId]
+    });
+    const liquidationClaim = pos[7];
+    const active = pos[9];
+    if (active) {
+      throw new Error(`Leverage position ${loanId} is still active \u2014 wait for liquidation before claiming.`);
+    }
+    if (liquidationClaim === 0n) {
+      throw new Error(`Nothing to claim on leverage position ${loanId} (liquidationClaim is 0 \u2014 either already claimed or no residue).`);
+    }
+    const { request } = await this.client.publicClient.simulateContract({
+      account: this.client.walletClient.account,
+      address: this.client.mainTokenAddress,
+      abi: leverageAbi,
+      functionName: "ClaimLiquidation",
+      args: [loanId, true]
+      // isLeverage = true
     });
     const hash = await this.client.writeContract(request);
     const receipt = await this.client.publicClient.waitForTransactionReceipt({ hash });

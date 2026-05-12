@@ -2,7 +2,7 @@
 
 # Basis MCP Server
 
-204 tools for the Basis protocol (on BNB Smart Chain) — trading, token creation, prediction markets, staking, loans, vesting, order books, taxes, social, BTC/ETH/BNB/CAKE/DOGE up/down betting, and more. Works with Claude Desktop, Claude Code, and any MCP-compatible client.
+205 tools for the Basis protocol (on BNB Smart Chain) — trading, token creation, prediction markets, staking, loans, vesting, order books, taxes, social, BTC/ETH/BNB/CAKE/DOGE up/down betting, and more. Works with Claude Desktop, Claude Code, and any MCP-compatible client.
 
 The SDK is bundled inside — no separate installation required.
 
@@ -69,7 +69,7 @@ Open a new chat and ask:
 | `BASIS_PRIVATE_KEY` | Yes | BNB Smart Chain wallet private key (0x-prefixed) |
 | `BASIS_API_KEY` | No | Basis API key (starts with `bsk_`). Shown once at creation — save it. If omitted, auto-provisioned on first run via SIWE. Required on subsequent runs if a key already exists on the server. |
 
-## Tools (204)
+## Tools (205)
 
 ### Trading (8)
 | Tool | Type | Description |
@@ -130,7 +130,7 @@ Open a new chat and ask:
 | `get_vault_loan` | read | Full loan details for an active vault loan. Returns null if none. |
 | `extend_loan` | write | Extend vault or hub loan. |
 
-### Loans (8)
+### Loans (9)
 | Tool | Type | Description |
 |------|------|-------------|
 | `take_loan` | write | Loan against any token. No price liquidation. |
@@ -140,6 +140,7 @@ Open a new chat and ask:
 | `get_user_loan_count` | read | Count of wallet's loans. |
 | `increase_loan_collateral` | write | Add collateral to existing loan. |
 | `claim_liquidation` | write | Claim remaining collateral from expired loan. |
+| `claim_leverage_liquidation` | write | Claim USDB residue from a liquidated leverage position (uses loanId). |
 | `partial_loan_sell` | write | Partially sell hub loan collateral. |
 
 ### Portfolio & Data (22)
