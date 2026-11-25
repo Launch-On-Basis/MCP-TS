@@ -413,6 +413,10 @@ Keys never leave the server process: they are not logged and no tool returns the
 | `get_vault_history` | read | One main's vault over time, one row per hour, 4 hours or day in which something happened: stakes, unstakes, compounds, reward claims, stake lost to liquidated vault loans, yield paid in (in the pair asset, what it added to the vault in the main, and USD) and the totals after. |
 <!-- tools:end -->
 
+## Found a bug?
+
+Report it at https://launchonbasis.com/bugreport, or ask your assistant to send it (`submit_bug_report`).
+
 ## License
 
 [Elastic License 2.0](LICENSE)
