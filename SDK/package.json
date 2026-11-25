@@ -1,0 +1,62 @@
+{
+  "name": "basis-sdk",
+  "version": "0.2.0-beta.1",
+  "description": "Basis DeFi SDK: trade, lend, stake, predict, and build on Robinhood Chain",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "browser": {
+    "./dist/index.mjs": "./dist/index.browser.mjs",
+    "./dist/index.js": "./dist/index.browser.mjs"
+  },
+  "exports": {
+    ".": {
+      "browser": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.browser.mjs"
+      },
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "keywords": [
+    "basis",
+    "defi",
+    "sdk",
+    "robinhood",
+    "prediction-markets",
+    "trading",
+    "lending",
+    "staking",
+    "ai-agents",
+    "erc-8004",
+    "viem"
+  ],
+  "author": "Basis Protocol",
+  "license": "Elastic-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Launch-On-Basis/SDK-TS.git"
+  },
+  "homepage": "https://launchonbasis.com",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "viem": "^2.43.0"
+  },
+  "files": [
+    "dist"
+  ],
+  "optionalDependencies": {
+    "sharp": "^0.34.5"
+  }
+}

@@ -1,0 +1,15 @@
+import { type Address } from "viem";
+import { type BasisClient, type MainInfo } from "basis-sdk";
+export declare function toRaw(value: string | number, decimals: number, field?: string): bigint;
+export declare function to18(value: string | number, field?: string): bigint;
+export declare function addr(value: string, field?: string): Address;
+export declare function toTokenRaw(client: BasisClient, token: Address, value: string | number, field?: string): Promise<bigint>;
+export declare function mainOfToken(client: BasisClient, token: Address): Promise<MainInfo>;
+export declare function toPairRawForToken(client: BasisClient, token: Address, value: string | number, field?: string): Promise<bigint>;
+export declare function toPairRaw(info: MainInfo, value: string | number, field?: string): bigint;
+export declare function resolveMain(client: BasisClient, ref?: string | null): Promise<MainInfo>;
+export declare function resolveToken(client: BasisClient, ref: string, field?: string): Promise<Address>;
+export declare function walletOrSelf(client: BasisClient, wallet?: string | null, field?: string): Address;
+export declare function setSlippageCap(maxPercent: number, isReal: boolean): void;
+export declare function slippageToBps(percent?: number | null): number | undefined;
+export declare function uint(value: string | number, field: string): bigint;
